@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 4.0)
 
-# `import std` is experimental in the pinned CMake. This UUID gates the
-# feature and is specific to the pinned cmake-devel snapshot (4.2.1,
-# commit 485f11a7). On any CMake bump, re-read Help/dev/experimental.rst
-# and update the value.
+# `import std` is experimental in CMake. This UUID gates the feature and is
+# specific to the CMake 4.2 series. On any CMake bump, re-read
+# Help/dev/experimental.rst and update the value.
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 
 project(starter LANGUAGES CXX)
@@ -14,8 +13,8 @@ option(STARTER_LINT_GRAPH
 )
 
 # The configure step decides whether the toolchain is acceptable; translation
-# units never negotiate features. Pinned target: GCC 16.x (interim: GCC 15.2
-# until MacPorts ships 16). The lint graph is the pinned Clang frontend.
+# units never negotiate features. Production: GCC 16.x. Lint: Clang 22.x.
+# Acquiring the toolchain is the developer's business (see README).
 if(STARTER_LINT_GRAPH)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "the lint graph requires the pinned Clang toolchain (got ${CMAKE_CXX_COMPILER_ID})")
@@ -27,8 +26,8 @@ else()
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         message(FATAL_ERROR "production builds require the pinned GCC toolchain (got ${CMAKE_CXX_COMPILER_ID})")
     endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
-        message(FATAL_ERROR "production builds require GCC >= 15 (pinned target: 16.x; got ${CMAKE_CXX_COMPILER_VERSION})")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
+        message(FATAL_ERROR "production builds require the pinned GCC 16.x (got ${CMAKE_CXX_COMPILER_VERSION})")
     endif()
 endif()
 

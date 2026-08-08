@@ -15,28 +15,28 @@
       "hidden": true,
       "inherits": "base",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "$env{HOME}/.gcc/current/bin/g++-16"
+        "CMAKE_CXX_COMPILER": "g++-16"
       }
     },
     {
-      "name": "gcc-dev",
-      "displayName": "GCC debug",
+      "name": "dev",
+      "displayName": "Debug development build",
       "inherits": "gcc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
-      "name": "gcc-release",
-      "displayName": "GCC optimized production build",
+      "name": "release",
+      "displayName": "Optimized production build",
       "inherits": "gcc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "gcc-asan-ubsan",
-      "displayName": "GCC AddressSanitizer + UndefinedBehaviorSanitizer",
+      "name": "asan-ubsan",
+      "displayName": "AddressSanitizer + UndefinedBehaviorSanitizer",
       "inherits": "gcc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
@@ -45,8 +45,8 @@
       }
     },
     {
-      "name": "gcc-tsan",
-      "displayName": "GCC ThreadSanitizer",
+      "name": "tsan",
+      "displayName": "ThreadSanitizer (Linux only)",
       "inherits": "gcc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
@@ -55,47 +55,44 @@
       }
     },
     {
-      "name": "clang-lint",
+      "name": "lint",
       "displayName": "Clang lint graph (clang-tidy runs during build)",
       "inherits": "base",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "/opt/local/libexec/llvm-22/bin/clang++",
-        "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "/opt/local/libexec/llvm-22/bin/clang-scan-deps",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-stdlib=libc++",
-        "CMAKE_CXX_STDLIB_MODULES_JSON": "/opt/local/libexec/llvm-22/lib/libc++/libc++.modules.json",
-        "CMAKE_EXE_LINKER_FLAGS": "-L/opt/local/libexec/llvm-22/lib/libc++ -Wl,-rpath,/opt/local/libexec/llvm-22/lib/libc++",
-        "CMAKE_CXX_CLANG_TIDY": "/opt/local/libexec/llvm-22/bin/clang-tidy;--experimental-custom-checks",
+        "CMAKE_CXX_CLANG_TIDY": "clang-tidy;--experimental-custom-checks",
         "STARTER_LINT_GRAPH": "ON"
       }
     }
   ],
   "buildPresets": [
-    { "name": "gcc-dev", "configurePreset": "gcc-dev" },
-    { "name": "gcc-release", "configurePreset": "gcc-release" },
-    { "name": "gcc-asan-ubsan", "configurePreset": "gcc-asan-ubsan" },
-    { "name": "gcc-tsan", "configurePreset": "gcc-tsan" },
-    { "name": "clang-lint", "configurePreset": "clang-lint" }
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "lint", "configurePreset": "lint" }
   ],
   "testPresets": [
     {
-      "name": "gcc-dev",
-      "configurePreset": "gcc-dev",
+      "name": "dev",
+      "configurePreset": "dev",
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "gcc-release",
-      "configurePreset": "gcc-release",
+      "name": "release",
+      "configurePreset": "release",
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "gcc-asan-ubsan",
-      "configurePreset": "gcc-asan-ubsan",
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan",
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "gcc-tsan",
-      "configurePreset": "gcc-tsan",
+      "name": "tsan",
+      "configurePreset": "tsan",
       "output": { "outputOnFailure": true }
     }
   ]
