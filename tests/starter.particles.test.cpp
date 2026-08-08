@@ -58,26 +58,26 @@ auto check_view_follows_declaration_order() -> CaseResult {
 }
 
 template<class Kernel>
-auto agrees_with_scalar_reference(Kernel kernel) -> bool {
+auto agrees_with_scalar_reference(Kernel kernel, std::size_t count) -> bool {
 	auto reference = starter::ParticleSoa{};
 	fill(reference);
-	auto const reference_view = starter::field_spans(reference, test_count);
+	auto const reference_view = starter::field_spans(reference, count);
 	for (auto axis = std::size_t{0}; axis < starter::axis_count; ++axis) {
-		for (auto i = std::size_t{0}; i < test_count; ++i) {
+		for (auto i = std::size_t{0}; i < count; ++i) {
 			reference_view.position[axis][i] += reference_view.velocity[axis][i] * dt;
 		}
 	}
 
 	auto subject = starter::ParticleSoa{};
 	fill(subject);
-	auto const subject_view = starter::field_spans(subject, test_count);
+	auto const subject_view = starter::field_spans(subject, count);
 	kernel(subject_view, dt);
 
 	// FMA contraction may differ per kernel; allow a few ulps around values
 	// of magnitude <= 0.75.
 	constexpr auto tolerance = 1.0e-5f;
 	for (auto axis = std::size_t{0}; axis < starter::axis_count; ++axis) {
-		for (auto i = std::size_t{0}; i < test_count; ++i) {
+		for (auto i = std::size_t{0}; i < count; ++i) {
 			auto const position_difference
 				= subject_view.position[axis][i] - reference_view.position[axis][i];
 			auto const velocity_difference
@@ -91,23 +91,35 @@ auto agrees_with_scalar_reference(Kernel kernel) -> bool {
 	return true;
 }
 
+// Both the partial-count path (scalar/SIMD tails, non-adjacent slab
+// fallback) and the full-capacity path (dense-slab fast path) must agree.
+template<class Kernel>
+auto kernel_matches(Kernel kernel) -> bool {
+	return agrees_with_scalar_reference(kernel, test_count)
+		&& agrees_with_scalar_reference(kernel, starter::soa_capacity);
+}
+
 auto check_kernels_agree() -> CaseResult {
-	auto passed = agrees_with_scalar_reference(
+	auto passed = kernel_matches(
 		[](starter::KinematicView const& view, float step) {
 			starter::integrate_loop(view, step);
 		});
-	passed = passed && agrees_with_scalar_reference(
+	passed = passed && kernel_matches(
 		[](starter::KinematicView const& view, float step) {
 			starter::integrate_stdsimd(view, step);
 		});
 	if (starter::neon_available()) {
-		passed = passed && agrees_with_scalar_reference(
+		passed = passed && kernel_matches(
 			[](starter::KinematicView const& view, float step) {
 				starter::integrate_neon(view, step);
 			});
+		passed = passed && kernel_matches(
+			[](starter::KinematicView const& view, float step) {
+				starter::integrate_neon_slab(view, step);
+			});
 	}
 	if (starter::sve_available()) {
-		passed = passed && agrees_with_scalar_reference(
+		passed = passed && kernel_matches(
 			[](starter::KinematicView const& view, float step) {
 				starter::integrate_sve(view, step);
 			});

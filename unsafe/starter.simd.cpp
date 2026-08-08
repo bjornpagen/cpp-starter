@@ -22,6 +22,10 @@ auto neon_kernel(std::array<float*, 3> const& positions,
 	std::array<float const*, 3> const& velocities, std::size_t count,
 	float dt) noexcept -> void;
 
+auto neon_slab_kernel(std::array<float*, 3> const& positions,
+	std::array<float const*, 3> const& velocities, std::size_t count,
+	float dt) noexcept -> void;
+
 auto sve_kernel_available() noexcept -> bool;
 
 auto sve_kernel(std::array<float*, 3> const& positions,
@@ -64,6 +68,12 @@ auto neon_available() -> bool {
 auto integrate_neon(KinematicView const& view, float dt) -> void {
 	contract_assert(neon_available());
 	unsafe_kernels::neon_kernel(position_pointers(view),
+		velocity_pointers(view), view.position[0].size(), dt);
+}
+
+auto integrate_neon_slab(KinematicView const& view, float dt) -> void {
+	contract_assert(neon_available());
+	unsafe_kernels::neon_slab_kernel(position_pointers(view),
 		velocity_pointers(view), view.position[0].size(), dt);
 }
 

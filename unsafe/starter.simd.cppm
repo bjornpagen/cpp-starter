@@ -21,6 +21,13 @@ export auto neon_available() -> bool;
 // pre: neon_available()
 export auto integrate_neon(KinematicView const& view, float dt) -> void;
 
+// KERNEL 5: raw NEON, x4-unrolled, over the dense SoA slab — when the view
+// covers the full capacity, each half's axis arrays are adjacent (a
+// compile-time law of the derived storage) and all axes stream through one
+// fused pass; otherwise it falls back to x4-unrolled per-axis passes.
+// pre: neon_available()
+export auto integrate_neon_slab(KinematicView const& view, float dt) -> void;
+
 // KERNEL 4: raw SVE intrinsics, fully predicated, vector-length-agnostic,
 // no scalar tail (aarch64 targets built with STARTER_SVE=ON only).
 export auto sve_available() -> bool;

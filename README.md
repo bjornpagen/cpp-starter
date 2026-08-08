@@ -85,14 +85,19 @@ Reference numbers, Apple M2 Max, GCC 16.1 release preset, 1024 particles:
 
 | Kernel | ns/step | relative |
 |---|---|---|
-| plain loop (autovectorized) | ~283 | 1.00x |
-| NEON intrinsics | ~368 | 1.30x |
-| `std::experimental::simd` | ~369 | 1.31x |
+| NEON x4 dense slab | ~178 | 1.00x |
+| plain loop (autovectorized) | ~284 | 1.60x |
+| NEON intrinsics (fused across axes) | ~365 | 2.05x |
+| `std::experimental::simd` | ~367 | 2.06x |
 | SVE intrinsics | not runnable on this hardware | — |
 
-The autovectorizer wins here: its one-axis-at-a-time passes let GCC unroll
-into many independent NEON chains, while the hand-fused kernels issue one
-4-lane operation per axis per iteration.
+The slab kernel wins by exploiting a compile-time law of the derived
+storage: each half's axis arrays are laid end to end, so a full-capacity
+view is one contiguous run and all axes stream through a single x4-unrolled
+pass (~3.7 of the core's 4 load/store slots per cycle — the L1 bandwidth
+ceiling for this access mix). Among the per-axis kernels the autovectorizer
+beats the hand-fused ones: its one-axis-at-a-time passes unroll into more
+independent NEON chains than one 4-lane operation per axis per iteration.
 
 ## Known macOS toolchain issues
 

@@ -78,7 +78,7 @@ auto main() -> int {
 		starter::soa_capacity, starter::axis_count, timed_calls, repetitions);
 
 	auto soa = starter::ParticleSoa{};
-	auto results = std::inplace_vector<Measurement, 4>{};
+	auto results = std::inplace_vector<Measurement, 5>{};
 
 	results.push_back(measure("loop (autovectorized)", soa,
 		[](starter::KinematicView const& view, float step) {
@@ -92,6 +92,10 @@ auto main() -> int {
 		results.push_back(measure("neon intrinsics", soa,
 			[](starter::KinematicView const& view, float step) {
 				starter::integrate_neon(view, step);
+			}));
+		results.push_back(measure("neon x4 dense slab", soa,
+			[](starter::KinematicView const& view, float step) {
+				starter::integrate_neon_slab(view, step);
 			}));
 	} else {
 		std::println("  {:<24} skipped: not available on this target",

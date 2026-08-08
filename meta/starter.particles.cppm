@@ -127,6 +127,13 @@ struct KinematicSoa {
 
 export using ParticleSoa = KinematicSoa<Particle, soa_capacity>;
 
+// Compile-time law: the derived storage is dense — each half is exactly its
+// axis arrays laid end to end, with no padding. The slab kernels in unsafe/
+// rely on this adjacency.
+static_assert(
+	sizeof(ParticleSoa) == sizeof(float) * 2 * axis_count * soa_capacity,
+	"SoA storage must be dense");
+
 // ============================================================
 // Reflection-derived access.
 //
