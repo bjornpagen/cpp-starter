@@ -1,10 +1,30 @@
-# CI currently runs the repository policy checker (AGENTS.md §34), which is
-# pure Python and toolchain-independent.
+# Toolchain-pinned CI. CI is part of the language implementation: the jobs
+# below run the same pinned stack the repository is developed against
+# (GCC 16.1 + CMake 4.2.1 + Ninja 1.13.2 for production graphs, Clang/LLVM 22
+# for the lint graph).
 #
-# Build/test/lint jobs require the pinned toolchain (GCC 16 + CMake 4.x +
-# Ninja + clang-tidy 22). Add them once a runner image or container with that
-# stack is pinned; per AGENTS.md they must include gcc-release, warnings-as-
-# errors, clang-lint, asan-ubsan, and tsan (ASan and TSan never combined).
+# Everything remote is pinned and was verified without running containers
+# (no docker available on the authoring machine):
+#   - docker.io/library/gcc tags checked via the Docker Hub API on 2026-08-08;
+#     16.1.0-trixie is the most specific existing 16.1 tag.
+#   - cmake-4.2.1-linux-x86_64.tar.gz asset + official SHA-256 checked via the
+#     GitHub releases API (Kitware/CMake v4.2.1). CMake must stay on the 4.2
+#     series: CMakeLists.txt hardcodes the 4.2-series experimental
+#     CXX_IMPORT_STD UUID.
+#   - ninja-linux.zip asset checked via the GitHub releases API
+#     (ninja-build/ninja v1.13.2); SHA-256 computed from the downloaded asset.
+#   - actions/checkout v5 tag resolved via
+#     `gh api repos/actions/checkout/git/ref/tags/v5` on 2026-08-08.
+#   - The libc++ modules manifest path was verified by extracting the actual
+#     apt.llvm.org noble libc++-22-dev deb (22.1.8 snapshot as of 2026-08-08):
+#     it ships /usr/lib/llvm-22/lib/libc++.modules.json (and a copy at
+#     /usr/lib/x86_64-linux-gnu/libc++.modules.json).
+#
+# Not verifiable remotely: the workflow itself was never executed (no docker
+# locally), so step-level behavior inside the gcc container (e.g. tool
+# availability beyond curl/tar, sanitizer runtime interaction with the
+# runner's ASLR settings) is untested until the first CI run.
+
 name: ci
 
 on:
@@ -12,10 +32,112 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  CMAKE_URL: https://github.com/Kitware/CMake/releases/download/v4.2.1/cmake-4.2.1-linux-x86_64.tar.gz
+  CMAKE_SHA256: c059bff1e97a2b6b5b0c0872263627486345ad0ed083298cb21cff2eda883980
+  NINJA_URL: https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux.zip
+  NINJA_SHA256: 5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6
+
 jobs:
-  policy:
-    runs-on: ubuntu-latest
+  gcc-release:
+    runs-on: ubuntu-24.04
+    container: gcc:16.1.0-trixie
     steps:
-      - uses: actions/checkout@v4
-      - name: Repository policy checks
-        run: python3 tools/check_policy.py
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pinned CMake and Ninja
+        run: |
+          curl -fsSL -o /tmp/cmake.tar.gz "$CMAKE_URL"
+          echo "$CMAKE_SHA256  /tmp/cmake.tar.gz" | sha256sum -c
+          tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tar.gz
+          curl -fsSL -o /tmp/ninja-linux.zip "$NINJA_URL"
+          echo "$NINJA_SHA256  /tmp/ninja-linux.zip" | sha256sum -c
+          (cd /usr/local/bin && cmake -E tar xf /tmp/ninja-linux.zip && chmod +x ninja)
+          cmake --version
+          ninja --version
+          g++ --version
+      # The gcc image ships the compiler as unversioned `g++`; override the
+      # preset's g++-16 (the configure step still enforces GNU >= 16).
+      - name: Configure
+        run: cmake --preset release -DCMAKE_CXX_COMPILER=g++
+      - name: Build
+        run: cmake --build --preset release
+      - name: Test
+        run: ctest --preset release
+
+  gcc-asan-ubsan:
+    runs-on: ubuntu-24.04
+    container: gcc:16.1.0-trixie
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pinned CMake and Ninja
+        run: |
+          curl -fsSL -o /tmp/cmake.tar.gz "$CMAKE_URL"
+          echo "$CMAKE_SHA256  /tmp/cmake.tar.gz" | sha256sum -c
+          tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tar.gz
+          curl -fsSL -o /tmp/ninja-linux.zip "$NINJA_URL"
+          echo "$NINJA_SHA256  /tmp/ninja-linux.zip" | sha256sum -c
+          (cd /usr/local/bin && cmake -E tar xf /tmp/ninja-linux.zip && chmod +x ninja)
+      - name: Configure
+        run: cmake --preset asan-ubsan -DCMAKE_CXX_COMPILER=g++
+      - name: Build
+        run: cmake --build --preset asan-ubsan
+      - name: Test
+        run: ctest --preset asan-ubsan
+
+  gcc-tsan:
+    runs-on: ubuntu-24.04
+    container: gcc:16.1.0-trixie
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pinned CMake and Ninja
+        run: |
+          curl -fsSL -o /tmp/cmake.tar.gz "$CMAKE_URL"
+          echo "$CMAKE_SHA256  /tmp/cmake.tar.gz" | sha256sum -c
+          tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tar.gz
+          curl -fsSL -o /tmp/ninja-linux.zip "$NINJA_URL"
+          echo "$NINJA_SHA256  /tmp/ninja-linux.zip" | sha256sum -c
+          (cd /usr/local/bin && cmake -E tar xf /tmp/ninja-linux.zip && chmod +x ninja)
+      - name: Configure
+        run: cmake --preset tsan -DCMAKE_CXX_COMPILER=g++
+      - name: Build
+        run: cmake --build --preset tsan
+      - name: Test
+        run: ctest --preset tsan
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install pinned CMake and Ninja
+        run: |
+          curl -fsSL -o /tmp/cmake.tar.gz "$CMAKE_URL"
+          echo "$CMAKE_SHA256  /tmp/cmake.tar.gz" | sha256sum -c
+          sudo tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tar.gz
+          curl -fsSL -o /tmp/ninja-linux.zip "$NINJA_URL"
+          echo "$NINJA_SHA256  /tmp/ninja-linux.zip" | sha256sum -c
+          (cd /tmp && cmake -E tar xf /tmp/ninja-linux.zip && chmod +x ninja && sudo mv ninja /usr/local/bin/)
+      - name: Install LLVM 22 from apt.llvm.org (pinned suite)
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/apt-llvm-org.gpg
+          echo "deb [signed-by=/usr/share/keyrings/apt-llvm-org.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" \
+            | sudo tee /etc/apt/sources.list.d/apt-llvm-org.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-22 clang-tidy-22 clang-tools-22 libc++-22-dev libc++abi-22-dev
+          /usr/lib/llvm-22/bin/clang++ --version
+          /usr/lib/llvm-22/bin/clang-tidy --version
+          /usr/lib/llvm-22/bin/clang-scan-deps --version
+          test -f /usr/lib/llvm-22/lib/libc++.modules.json
+      # The lint preset uses bare tool names; point every tool at the real
+      # LLVM 22 binaries and at the libc++ modules manifest the Debian
+      # packages install (path confirmed from the libc++-22-dev file list).
+      - name: Configure
+        run: |
+          cmake --preset lint \
+            -DCMAKE_CXX_COMPILER=/usr/lib/llvm-22/bin/clang++ \
+            -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/lib/llvm-22/bin/clang-scan-deps \
+            -DCMAKE_CXX_CLANG_TIDY='/usr/lib/llvm-22/bin/clang-tidy;--experimental-custom-checks' \
+            -DCMAKE_CXX_STDLIB_MODULES_JSON=/usr/lib/llvm-22/lib/libc++.modules.json
+      - name: Build
+        run: cmake --build --preset lint
