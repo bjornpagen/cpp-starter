@@ -1,0 +1,21 @@
+# CI currently runs the repository policy checker (AGENTS.md §34), which is
+# pure Python and toolchain-independent.
+#
+# Build/test/lint jobs require the pinned toolchain (GCC 16 + CMake 4.x +
+# Ninja + clang-tidy 22). Add them once a runner image or container with that
+# stack is pinned; per AGENTS.md they must include gcc-release, warnings-as-
+# errors, clang-lint, asan-ubsan, and tsan (ASan and TSan never combined).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository policy checks
+        run: python3 tools/check_policy.py
