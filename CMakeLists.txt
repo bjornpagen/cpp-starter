@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 4.0)
 
+if(CMAKE_VERSION VERSION_LESS 4.2 OR CMAKE_VERSION VERSION_GREATER_EQUAL 4.3)
+    message(FATAL_ERROR "CMake 4.2.x is required: the import-std experimental UUID below is specific to the 4.2 series (got ${CMAKE_VERSION})")
+endif()
+
 # `import std` is experimental in CMake. This UUID gates the feature and is
 # specific to the CMake 4.2 series. On any CMake bump, re-read
 # Help/dev/experimental.rst and update the value.
@@ -13,21 +17,23 @@ option(STARTER_LINT_GRAPH
 )
 
 # The configure step decides whether the toolchain is acceptable; translation
-# units never negotiate features. Production: GCC 16.x. Lint: Clang 22.x.
+# units never negotiate features. Production: GCC 16.1.x. Lint: Clang 22.x.
 # Acquiring the toolchain is the developer's business (see README).
 if(STARTER_LINT_GRAPH)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "the lint graph requires the pinned Clang toolchain (got ${CMAKE_CXX_COMPILER_ID})")
     endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 22)
-        message(FATAL_ERROR "the lint graph requires Clang 22.x (got ${CMAKE_CXX_COMPILER_VERSION})")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 22
+            OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
+        message(FATAL_ERROR "the lint graph requires the pinned Clang 22.x (got ${CMAKE_CXX_COMPILER_VERSION})")
     endif()
 else()
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         message(FATAL_ERROR "production builds require the pinned GCC toolchain (got ${CMAKE_CXX_COMPILER_ID})")
     endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
-        message(FATAL_ERROR "production builds require the pinned GCC 16.x (got ${CMAKE_CXX_COMPILER_VERSION})")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.1
+            OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 16.2)
+        message(FATAL_ERROR "production builds require the pinned GCC 16.1.x (got ${CMAKE_CXX_COMPILER_VERSION})")
     endif()
 endif()
 
@@ -46,10 +52,12 @@ set(CMAKE_CXX_MODULE_STD ON)
 # global, not part of the language-profile target.
 string(APPEND CMAKE_CXX_FLAGS " -fno-exceptions -fno-rtti")
 
-include(CheckCompilerFlag)
-check_compiler_flag(CXX -freflection STARTER_COMPILER_HAS_REFLECTION)
-if(STARTER_COMPILER_HAS_REFLECTION AND NOT STARTER_LINT_GRAPH)
+if(NOT STARTER_LINT_GRAPH)
+    # Reflection is not negotiable: the version gate above guarantees GCC
+    # 16.1.x, which implements it.
     string(APPEND CMAKE_CXX_FLAGS " -freflection")
+    # Contracts (P2900): handle_contract_violation links from libstdc++exp.
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -lstdc++exp")
 endif()
 
 # ----------------------------------------------------------------------------
@@ -80,7 +88,7 @@ target_compile_options(starter_language_profile INTERFACE
 add_subdirectory(src)
 
 # meta/ holds GCC-only reflection modules; it is never part of the lint graph.
-if(STARTER_COMPILER_HAS_REFLECTION AND NOT STARTER_LINT_GRAPH)
+if(NOT STARTER_LINT_GRAPH)
     add_subdirectory(meta)
 endif()
 

@@ -5,6 +5,8 @@ target_sources(starter_core
         FILE_SET CXX_MODULES
         FILES
             starter.core.cppm
+    PRIVATE
+        starter.core.cpp
 )
 
 target_link_libraries(starter_core

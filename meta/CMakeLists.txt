@@ -1,13 +1,13 @@
-add_library(starter_meta)
+add_library(starter_enums)
 
-target_sources(starter_meta
+target_sources(starter_enums
     PUBLIC
         FILE_SET CXX_MODULES
         FILES
-            starter.meta.cppm
+            starter.enums.cppm
 )
 
-target_link_libraries(starter_meta
+target_link_libraries(starter_enums
     PUBLIC
         starter_language_profile
 )

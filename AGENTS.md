@@ -43,7 +43,7 @@ alternative.
 | Resource lifetime | RAII | manual cleanup paths |
 | Dynamic ownership | `std::unique_ptr<T>` when a value cannot suffice | raw owning pointers, `shared_ptr`, `weak_ptr` |
 | Required borrow | `T&` / `T const&` | raw pointers |
-| Optional borrow | `std::optional<std::reference_wrapper<T>>` | nullable raw pointers |
+| Optional borrow | `std::optional<T&>` | nullable raw pointers, `std::optional<std::reference_wrapper<T>>` |
 | Sequence borrow | `std::span<T>` | pointer + length |
 | Text borrow | `std::string_view` | pointer + length / null-terminated borrowed APIs |
 | Finite atoms | `enum class` | integer constants, strings-as-enums |
@@ -61,15 +61,14 @@ the missing primitive before introducing a second way.
 
 ## 2. Toolchain
 
-Production code targets one pinned toolchain stack:
+Production code targets exactly one pinned toolchain tuple: the production
+compiler + its matching standard library, the build system, the generator, and
+the separately pinned clang-tidy build for the reflection-free lint graph.
 
-- GCC 16.x + its matching libstdc++,
-- CMake 4.4.x,
-- Ninja 1.13.x,
-- one separately pinned clang-tidy build for the reflection-free lint graph.
-
-Pin exact patch versions in repository tooling. Toolchain versions are part of
-the language implementation, not ambient developer-machine state.
+The exact versions are enforced by the top-level CMake configure gate. They
+live there and only there; documentation must not duplicate version numbers.
+Toolchain versions are part of the language implementation, not ambient
+developer-machine state.
 
 Required project compiler properties:
 
@@ -113,7 +112,7 @@ CMake
   -> declares targets, modules, usage requirements, configurations, and tests
 Ninja
   -> executes the generated dependency graph
-GCC 16
+GCC
   -> authoritative production compiler
 Clang
   -> secondary reflection-free lint frontend
@@ -309,7 +308,7 @@ that Clang can parse. Until Clang supports the reflection syntax used by this
 repository, GCC-only reflection translation units are excluded from clang-tidy.
 
 This does **not** weaken the language rules. GCC-only files obey this document
-and are checked by compiler diagnostics plus repository policy checks.
+and are checked by compiler diagnostics plus review.
 
 Maintain the dedicated `clang-lint` CMake/Ninja graph for modules whose entire
 parse/import graph is Clang-readable. `meta/` is excluded from that graph until
@@ -658,9 +657,14 @@ std::optional<T>       genuine absence
 std::variant<...>      alternatives
 sender error channel   asynchronous failure
 sender stopped channel cancellation
-contract/assertion     programmer/invariant violation
+C++26 contract         impossible programmer state
 termination            unrecoverable process failure
 ```
+
+There is exactly one mechanism per failure class: recoverable failure uses
+`std::expected`; impossible programmer state uses a C++26 contract (`pre`,
+`post`, `contract_assert`); compile-time law uses `static_assert`;
+unrecoverable process failure terminates.
 
 Never use error-code + output-parameter APIs in dialect code.
 
@@ -707,14 +711,30 @@ No raw owning pointer exists.
 Use exactly:
 
 ```text
-T& / T const&                              required single-object borrow
-std::optional<std::reference_wrapper<T>>  optional single-object borrow
-std::span<T>                               contiguous sequence borrow
-std::string_view                           text borrow
+T& / T const&        required single-object borrow
+std::optional<T&>    optional single-object borrow
+std::span<T>         contiguous sequence borrow
+std::string_view     text borrow
 ```
+
+The pinned toolchain implements C++26 `std::optional<T&>`. The
+`std::optional<std::reference_wrapper<T>>` spelling is forbidden.
 
 Do not invent alternate project-specific view wrappers without a demonstrated
 semantic need not covered by these primitives.
+
+### Lifetime rules
+
+- Synchronous function parameters may borrow.
+- Owning structs do not contain borrows unless the type is explicitly an
+  ephemeral view product (`FooView` naming).
+- Values crossing an async/sender boundary must be owned.
+- A sender returned from a function must not capture locals or parameters by
+  reference.
+- Returned borrows must never derive from locals or by-value parameters.
+- Messages between concurrent components must be ownership-closed: recursively
+  free of references, `std::optional<T&>`, `std::span`, `std::string_view`, and
+  `std::function_ref`.
 
 ---
 
@@ -812,6 +832,13 @@ std::packaged_task
 detached work
 ad-hoc callback concurrency
 ```
+
+### Toolchain status
+
+Sender/receiver is the normative async algebra, but the pinned libstdc++ does
+not yet ship `std::execution`. Until it does, dialect code contains no async
+mechanism at all. The rule exists so that no substitute — threads, callbacks,
+coroutines — is ever admitted in the interim.
 
 ### Shared mutable state
 
@@ -1152,9 +1179,15 @@ Prefer, in order:
 
 1. values / automatic storage,
 2. fixed-size containers (`std::array`, fixed-capacity structures),
-3. ordinary standard containers when dynamic capacity is semantically needed,
-4. arenas for bulk/stable ownership,
-5. `std::unique_ptr` for truly independent dynamic lifetime.
+3. `std::inplace_vector<T, N>` where a bounded capacity is semantically real,
+4. ordinary standard containers when dynamic capacity is semantically needed,
+5. arenas for bulk/stable ownership,
+6. `std::indirect<T>` for value-semantic heap indirection without pointer
+   identity,
+7. `std::unique_ptr` for truly independent dynamic lifetime.
+
+The pinned toolchain implements both `std::inplace_vector` and
+`std::indirect`; they narrow the legitimate uses of `std::unique_ptr`.
 
 Zero-allocation is a property to design and measure in hot paths, not a reason
 to replace safe containers with pointer arithmetic.
@@ -1186,12 +1219,15 @@ If low-level code is required, isolate it behind a safe module boundary.
 
 Use the type system when a property can be encoded cheaply.
 
-Use `consteval` / `static_assert` when the property is compile-time structural.
+There is exactly one mechanism per failure class:
 
-Use C++26 contracts or the project invariant/assertion primitive for local
-runtime preconditions/invariants that are programmer obligations.
+- recoverable input/domain failure -> `std::expected`,
+- impossible programmer state -> a C++26 contract (`pre`, `post`,
+  `contract_assert`),
+- compile-time law -> `static_assert`,
+- unrecoverable process failure -> termination.
 
-Use `std::expected` for recoverable input/domain failure.
+No other assertion or invariant primitive exists.
 
 Do not turn recoverable errors into assertions.
 Do not turn programmer bugs into ordinary error plumbing merely to avoid a
@@ -1205,7 +1241,7 @@ Tests obey the dialect. Do not introduce a macro-heavy test framework into
 `tests/`.
 
 Prefer a module-native minimal test harness using ordinary functions,
-`std::expected`/assertion primitives, property tests, and data-driven tests.
+`std::expected`/`contract_assert`, property tests, and data-driven tests.
 
 Required CI modes should include:
 
@@ -1246,79 +1282,28 @@ If a rule genuinely cannot apply, one of these must be true:
 
 Local exceptions create a second language and are not permitted.
 
+Enforcement is clang-tidy itself plus review; suppression markers are a review
+convention, not the subject of any repository checker.
+
 ---
 
-## 34. Repository source-policy checks
+## 34. Enforcement
 
-clang-tidy cannot enforce preprocessing rules, forbidden file extensions, every
-forbidden library type, or GCC-only reflection files. CI must therefore run a
-repository policy checker over `src/`, `meta/`, and `tests/`.
+The rules in this document are enforced by a ladder, strongest layer first:
 
-At minimum it must fail on preprocessing directives:
+1. **Compiler flags** make violations unrepresentable: `-fno-exceptions` and
+   `-fno-rtti` remove exceptions and RTTI from the language itself.
+2. **The build graph** rejects what it can: module lists are explicit, header
+   units fail dependency scanning, and wrong toolchains fail configure.
+3. **clang-tidy AST checks** enforce the semantic bans over the Clang-readable
+   graph.
+4. Everything visible only in raw source text — preprocessor directives, lint
+   suppressions, header-like file extensions — is a **review convention**,
+   deliberately **not** machine-enforced. There is no repository grep/regex
+   checker, by decision.
 
-```regex
-(?m)^\s*#\s*(include|define|undef|if|ifdef|ifndef|elif|else|endif|pragma|error|warning|line|embed)\b
-```
-
-It must fail on header units:
-
-```regex
-(?m)^\s*(export\s+)?import\s*[<"]
-```
-
-It must fail on clang-tidy suppressions:
-
-```regex
-\bNOLINT(?:NEXTLINE|BEGIN|END)?\b
-```
-
-It must fail on project header-like file extensions.
-
-It must fail on forbidden library/type tokens in dialect code, including at
-least:
-
-```text
-std::shared_ptr
-std::weak_ptr
-std::enable_shared_from_this
-std::make_shared
-std::function<
-std::any
-std::type_info
-std::type_index
-std::thread
-std::jthread
-std::async
-std::future
-std::promise
-std::packaged_task
-std::mutex
-std::recursive_mutex
-std::shared_mutex
-std::condition_variable
-std::atomic
-std::enable_if
-std::enable_if_t
-std::void_t
-```
-
-It must fail on direct coroutine tokens:
-
-```text
-co_await
-co_yield
-co_return
-```
-
-It must fail on project preprocessor usage regardless of whether clang-tidy
-could parse the file.
-
-The checker may allow these tokens under `foreign/` or specifically approved
-`unsafe/` implementation modules.
-
-Do not use a regex policy checker to decide subtle semantic questions such as
-whether a `std::same_as` occurrence is legitimate; those remain concept/review
-rules unless and until an AST check exists.
+Accepted gap: `meta/` escapes the AST checks until the pinned Clang parses the
+project's reflection syntax. There, enforcement is compiler flags plus review.
 
 ---
 
@@ -1418,19 +1403,23 @@ No exceptions.
 ```cpp
 using State = std::variant<Idle, Running, Failed>;
 
+struct StepVisitor {
+    Event event;
+
+    auto operator()(Idle value) -> State { /* ... */ }
+    auto operator()(Running value) -> State { /* ... */ }
+    auto operator()(Failed value) -> State { /* ... */ }
+};
+
 auto step(State state, Event event) -> State {
-    return std::visit(
-        overload{
-            [&](Idle value) -> State { /* ... */ },
-            [&](Running value) -> State { /* ... */ },
-            [&](Failed value) -> State { /* ... */ },
-        },
-        std::move(state)
-    );
+    return std::visit(StepVisitor{std::move(event)}, std::move(state));
 }
 ```
 
-No state-class hierarchy.
+No state-class hierarchy. The eliminator is a plain product type with one
+`operator()` per alternative — not an `overload{...}` set built by variadic
+inheritance, which this document forbids. Reflection may later derive
+exhaustive visitors.
 
 ### Concurrent composition
 

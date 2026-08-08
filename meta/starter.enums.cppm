@@ -1,12 +1,12 @@
-export module starter.meta;
+export module starter.enums;
 
 import std;
 
-export namespace starter::meta {
+namespace starter {
 
 // Reflection-derived enumerator name: the enum declaration is the single
 // source of truth (AGENTS.md §17); no parallel string table exists.
-template<class E>
+export template<class E>
     requires std::is_enum_v<E>
 auto enum_name(E value) -> std::optional<std::string_view> {
     template for (
@@ -20,4 +20,4 @@ auto enum_name(E value) -> std::optional<std::string_view> {
     return std::nullopt;
 }
 
-} // namespace starter::meta
+} // namespace starter

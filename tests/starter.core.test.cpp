@@ -8,20 +8,20 @@ struct CaseResult {
     bool passed;
 };
 
+using Greeting = std::expected<std::string, starter::GreetError>;
+
 auto check_greeting_formats_name() -> CaseResult {
-    auto const result = starter::greeting("modules");
     return CaseResult{
         .name = "greeting formats the given name",
-        .passed = result.has_value() && result.value() == "hello, modules",
+        .passed = starter::greeting("modules") == Greeting{"hello, modules"},
     };
 }
 
 auto check_greeting_rejects_empty_name() -> CaseResult {
-    auto const result = starter::greeting("");
     return CaseResult{
         .name = "greeting rejects an empty name",
-        .passed = !result.has_value()
-            && result.error() == starter::GreetError::EmptyName,
+        .passed = starter::greeting("")
+            == std::unexpected(starter::GreetError::EmptyName),
     };
 }
 

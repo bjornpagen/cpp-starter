@@ -1,6 +1,6 @@
 import std;
 import starter.core;
-import starter.meta;
+import starter.enums;
 
 namespace {
 
@@ -10,18 +10,18 @@ struct CaseResult {
 };
 
 auto check_enum_name_derives_identifier() -> CaseResult {
-    auto const name = starter::meta::enum_name(starter::GreetError::EmptyName);
     return CaseResult{
         .name = "enum_name derives the enumerator identifier via reflection",
-        .passed = name.has_value() && name.value() == "EmptyName",
+        .passed = starter::enum_name(starter::GreetError::EmptyName)
+            == std::optional<std::string_view>{"EmptyName"},
     };
 }
 
 auto check_enum_name_rejects_unnamed_value() -> CaseResult {
-    auto const name = starter::meta::enum_name(static_cast<starter::GreetError>(255));
     return CaseResult{
         .name = "enum_name reports absence for a value with no enumerator",
-        .passed = !name.has_value(),
+        .passed = starter::enum_name(static_cast<starter::GreetError>(255))
+            == std::nullopt,
     };
 }
 

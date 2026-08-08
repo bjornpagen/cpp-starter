@@ -9,13 +9,13 @@ forbidden — read it before writing any code.
 
 ## Requirements
 
-Bring your own toolchain; install it however you like. The configure step
-rejects anything that doesn't meet the pin.
+Bring your own toolchain; install it however you like. Versions are enforced
+at configure time; the table is informative.
 
 | Tool | Version | Used for |
 |---|---|---|
-| GCC | 16.1+ | production compiler, found as `g++-16` |
-| CMake | 4.2+ | build description |
+| GCC | 16.1.x | production compiler, found as `g++-16` |
+| CMake | 4.2.x | build description |
 | Ninja | 1.13+ | build execution |
 | LLVM (clang++, clang-tidy, clang-scan-deps) | 22 | `lint` preset only |
 
@@ -48,15 +48,19 @@ tests/      dialect tests (module-native minimal harness, no macro frameworks)
 meta/       GCC-only C++26 reflection modules (excluded from the lint graph)
 foreign/    quarantined external-interface adaptation (headers allowed)
 unsafe/     quarantined machine primitives (atomics, intrinsics, casts)
-tools/      repository tooling (policy checker)
 ```
 
 ## Checks
 
-```sh
-python3 tools/check_policy.py   # AGENTS.md §34 source-policy checks (also runs in CI)
-cmake --build --preset lint     # clang-tidy over the Clang-readable graph
-```
+Enforcement lives in the compiler and the build, not in scripts:
+
+- **the compiler** — exceptions off, RTTI off, reflection on are hard
+  configure-time flags; a toolchain outside the pin never configures
+- **the build graph** — `cmake --build --preset dev` (any warning is an error)
+- **clang-tidy** — `cmake --build --preset lint` runs it over the
+  Clang-readable graph during the build
+- **ctest** — `ctest --preset dev` runs the unit tests plus the
+  toolchain-conformance tests
 
 ## Known macOS toolchain issues
 
