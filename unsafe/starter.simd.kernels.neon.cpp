@@ -1,0 +1,56 @@
+// KERNEL 3: raw NEON intrinsics. Module-free TU: see starter.simd.cpp for
+// why the intrinsic bodies cannot import modules. Selected by the build
+// graph for aarch64 targets only.
+#include <arm_neon.h>
+
+#include <array>
+#include <cstddef>
+#include <utility>
+
+namespace starter::unsafe_kernels {
+
+namespace {
+
+constexpr std::size_t axis_count = 3;
+
+// Compile-time axis expansion: don't merely hope the optimizer unrolls a
+// runtime axis loop.
+template<class F, std::size_t... I>
+constexpr void for_each_axis_impl(F&& f, std::index_sequence<I...>) {
+	(f(std::integral_constant<std::size_t, I>{}), ...);
+}
+
+template<class F>
+constexpr void for_each_axis(F&& f) {
+	for_each_axis_impl(std::forward<F>(f),
+		std::make_index_sequence<axis_count>{});
+}
+
+} // namespace
+
+auto neon_kernel_available() noexcept -> bool {
+	return true;
+}
+
+auto neon_kernel(std::array<float*, 3> const& positions,
+	std::array<float const*, 3> const& velocities, std::size_t count,
+	float dt) noexcept -> void
+{
+	float32x4_t const vdt = vdupq_n_f32(dt);
+	std::size_t i = 0;
+	for (; i + 4 <= count; i += 4) {
+		for_each_axis([&]<std::size_t K>(std::integral_constant<std::size_t, K>) {
+			float32x4_t const pos = vld1q_f32(positions[K] + i);
+			float32x4_t const vel = vld1q_f32(velocities[K] + i);
+			vst1q_f32(positions[K] + i, vfmaq_f32(pos, vel, vdt));
+		});
+	}
+	// scalar tail
+	for (; i < count; ++i) {
+		for_each_axis([&]<std::size_t K>(std::integral_constant<std::size_t, K>) {
+			positions[K][i] += velocities[K][i] * dt;
+		});
+	}
+}
+
+} // namespace starter::unsafe_kernels

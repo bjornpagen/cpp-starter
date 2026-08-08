@@ -48,6 +48,7 @@ tests/      dialect tests (module-native minimal harness, no macro frameworks)
 meta/       GCC-only C++26 reflection modules (excluded from the lint graph)
 foreign/    quarantined external-interface adaptation (headers allowed)
 unsafe/     quarantined machine primitives (atomics, intrinsics, casts)
+benchmarks/ dialect benchmark executables (GCC graph only, never in CI gates)
 ```
 
 ## Checks
@@ -61,6 +62,37 @@ Enforcement lives in the compiler and the build, not in scripts:
   Clang-readable graph during the build
 - **ctest** — `ctest --preset dev` runs the unit tests plus the
   toolchain-conformance tests
+
+## Benchmarks
+
+`starter_particles_bench` times four integration kernels over the same
+reflection-derived SoA storage (`meta/starter.particles.cppm` derives the
+layout and the access from `Particle` via `define_aggregate`):
+
+```sh
+cmake --preset release
+cmake --build --preset release
+./build/release/benchmarks/starter_particles_bench
+```
+
+Kernel availability follows the build graph, not preprocessor conditionals:
+the NEON kernel is selected for aarch64 targets only, and the SVE kernel is
+built only with `-DSTARTER_SVE=ON` on a target that actually executes SVE —
+no supported development host does (Apple silicon has no SVE; CI is x86_64),
+so by default a stub reports it unavailable.
+
+Reference numbers, Apple M2 Max, GCC 16.1 release preset, 1024 particles:
+
+| Kernel | ns/step | relative |
+|---|---|---|
+| plain loop (autovectorized) | ~283 | 1.00x |
+| NEON intrinsics | ~368 | 1.30x |
+| `std::experimental::simd` | ~369 | 1.31x |
+| SVE intrinsics | not runnable on this hardware | — |
+
+The autovectorizer wins here: its one-axis-at-a-time passes let GCC unroll
+into many independent NEON chains, while the hand-fused kernels issue one
+4-lane operation per axis per iteration.
 
 ## Known macOS toolchain issues
 
