@@ -25,8 +25,14 @@
 
 name: upstream-verify
 
+# workflow_dispatch alone is not enough while this file lives only on this
+# branch: GitHub registers dispatchable workflows from the default branch
+# only, so the branch-scoped push trigger is what actually launches runs
+# until (if ever) this lands on main.
 on:
   workflow_dispatch:
+  push:
+    branches: [upstream-verify]
 
 jobs:
   ice-vanilla-16:
