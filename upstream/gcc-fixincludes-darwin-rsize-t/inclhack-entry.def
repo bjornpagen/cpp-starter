@@ -1,0 +1,21 @@
+/*
+ * Draft fixincludes hack for fixincludes/inclhack.def — follows the format
+ * of the neighboring darwin hacks (see apple_local_stdio_fn_deprecation).
+ *
+ * The SDK header's clang branch is gated on __has_feature(modules), which
+ * GCC also satisfies under -fmodules, but the branch then relies on the
+ * clang-only stddef.h __need_rsize_t protocol; rsize_t never gets defined.
+ * Rewrite the guard so the plain-typedef branch is always taken under GCC.
+ */
+
+fix = {
+    hackname  = darwin_rsize_t_modules;
+    mach      = "*-*-*darwin*";
+    files     = sys/_types/_rsize_t.h;
+    select    = "defined\\(__has_feature\\) && __has_feature\\(modules\\)";
+    c_fix     = format;
+    c_fix_arg = "0 /* GCC: the clang __need_rsize_t stddef protocol below "
+                "is not implemented; always take the plain-typedef branch "
+                "(fixincludes) */";
+    test_text = "#if defined(__has_feature) && __has_feature(modules)";
+};

@@ -100,9 +100,47 @@ target_compile_options(starter_language_profile INTERFACE
 # TUs use P2900 contract_assert, which the pinned Clang cannot parse. The
 # lint preset still enforces its toolchain gate and configure-time sanity.
 if(NOT STARTER_LINT_GRAPH)
+	# stdexec: the pinned std::execution reference implementation backing the
+	# sender/receiver dialect surface until libstdc++ ships __cpp_lib_senders
+	# (tombstone in tests/conformance.test.cc). Pinned to the immutable
+	# revision below per AGENTS.md §3.7 — never a moving branch/tag, so the
+	# acquired source is reproducible byte-for-byte.
+	#
+	# Consumed from OUR MAINTAINED FORK, not upstream: every fork commit is
+	# an individually-upstreamable fix with a pending PR (policy: FORK.md in
+	# the fork; upstream/ here carries the submission drafts), and the fork's
+	# success condition is its own emptiness as upstream absorbs the delta.
+	#
+	#   fork      https://github.com/bjornpagen/stdexec  (branch: integration)
+	#   upstream  https://github.com/NVIDIA/stdexec
+	#   revision  4c1b31aff932879159fb8a79e977eb8a5034d422  (2026-08-09)
+	#             = upstream fd60b20a
+	#             + fix(__spin_loop_pause): duplicate 'inline' — a hard GCC
+	#               error on every arm build since upstream f0e8ae6f (clang
+	#               merely warns, which is why their CI stayed green)
+	#             + fix(sync_wait): terminate instead of misreporting typed
+	#               errors as stopped when exceptions are unavailable
+	#
+	# Header-only consumption: SOURCE_SUBDIR points at include/, which has no
+	# CMakeLists.txt, so FetchContent_MakeAvailable populates the source tree
+	# without ever running stdexec's own build (which would fetch
+	# rapids-cmake). The include path is applied SYSTEM PRIVATE to the one
+	# swap-boundary target in foreign/CMakeLists.txt; no other target may see
+	# these headers.
+	#
+	include(FetchContent)
+	FetchContent_Declare(stdexec
+		GIT_REPOSITORY https://github.com/bjornpagen/stdexec.git
+		GIT_TAG 4c1b31aff932879159fb8a79e977eb8a5034d422
+		SOURCE_SUBDIR include
+	)
+	FetchContent_MakeAvailable(stdexec)
+
 	add_subdirectory(src)
 	add_subdirectory(unsafe)
+	add_subdirectory(foreign)
 	add_subdirectory(benchmarks)
+	add_subdirectory(examples)
 endif()
 
 enable_testing()

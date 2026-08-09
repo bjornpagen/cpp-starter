@@ -48,12 +48,34 @@ export surface — partitions cannot be imported from outside the module.
 
 ```text
 src/        the starter module: primary interface + dialect partitions
+            (:core, :enums, :particles, :http — the HTTP/1.1 parser/writer)
 tests/      dialect tests (module-native minimal harness, no macro frameworks)
-foreign/    quarantined external-interface adaptation (headers allowed)
+foreign/    quarantined external-interface adaptation (headers allowed);
+            holds the :exec partition and the combinator half of the
+            stdexec swap boundary (exec.backend.cc)
 unsafe/     quarantined machine primitives; holds the :simd partition and
-            the intrinsic kernel TUs
+            the intrinsic kernel TUs, plus the :net partition and the I/O
+            half of the swap boundary (net.backend.cc — kqueue io-context)
+examples/   dialect example executables (httpd: thread-per-core
+            share-nothing HTTP server over :net + :http)
 benchmarks/ dialect benchmark executables (GCC graph only, never in CI gates)
 ```
+
+## Async
+
+Sender/receiver (`std::execution`, P2300) is the only async algebra, active
+today via the reference implementation (NVIDIA stdexec) pinned by SHA at
+configure time and quarantined behind exactly one swap boundary spelled
+across two plain TUs: `foreign/exec.backend.cc` (combinator half)
+re-exports the verified combinator subset as `namespace ex` plus an
+expected-erroring `wait` (never `sync_wait`, whose typed-error channel is
+lossy under `-fno-exceptions`), and `unsafe/net.backend.cc` (I/O half)
+composes the kqueue io-context's readiness senders. The `starter:exec` and
+`starter:net` partitions export the dialect-clean surfaces over a narrow
+ABI (GCC 16.1 ICEs on stdexec headers in any module unit, so senders never
+cross the module boundary). No other file may touch stdexec; when libstdc++
+ships `__cpp_lib_senders`, the vendor is deleted and only that boundary is
+rewritten (AGENTS.md §15).
 
 ## Checks
 

@@ -16,6 +16,7 @@ target_sources(starter_module
 			enums.cc
 			particles.cc
 			integrate.cc
+			http.cc
 )
 
 # GCC 16.1 quirk: expansion statements (`template for`) re-declare the loop

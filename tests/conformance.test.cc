@@ -44,9 +44,19 @@ static_assert(false, "__cpp_lib_optional_ref appeared: the toolchain caught up, 
 
 // TOMBSTONE(std::execution, P2300 senders/receivers): __cpp_lib_senders is
 // UNDEFINED; <execution> compiles but holds only the classic parallel
-// policies — std::execution::just/then do not exist. When the macro appears,
-// enable and exercise a just | then | sync_wait pipeline for real:
+// policies — std::execution::just/then do not exist. The algebra is ACTIVE
+// meanwhile via the pinned reference implementation behind the one swap
+// boundary — two quarantine TUs, foreign/exec.backend.cc (combinators) and
+// unsafe/net.backend.cc (I/O); AGENTS.md §15. This tombstone now
+// signals time-to-delete-the-vendor: when the macro appears, rewrite that
+// boundary over std::execution, drop the stdexec FetchContent pin from the
+// top-level CMakeLists.txt, and promote this assert:
 // static_assert(__cpp_lib_senders >= 202406L, "std::execution (P2300)");
+#ifdef __cpp_lib_senders
+static_assert(false, "__cpp_lib_senders appeared: the toolchain caught up — delete the "
+                     "vendored stdexec, rewrite foreign/exec.backend.cc and unsafe/net.backend.cc "
+                     "over std::execution, and promote the commented static_assert above");
+#endif
 
 // ---------------------------------------------------------------------------
 // std::optional<int&>: rebinding-free reference semantics, write-through.
