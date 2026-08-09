@@ -1,5 +1,3 @@
-// http.test.cc — unit spec of the :http partition: request parsing (valid,
-// malformed, torn-buffer) and the buffer-writing response side.
 import std;
 import starter;
 
@@ -47,8 +45,6 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
 }
 
 [[nodiscard]] auto check_torn_buffer_prefixes() -> CaseResult {
-	// Every strict prefix of a valid request lacks the head terminator and
-	// must report Incomplete (keep reading), never Malformed.
 	auto passed = true;
 	for (auto length = std::size_t{0}; length < valid_request.size(); ++length) {
 		passed = passed && parse_prefix_incomplete(length);
@@ -59,12 +55,12 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
 [[nodiscard]] auto check_malformed_request_lines() -> CaseResult {
 	using enum starter::HttpError;
 	auto const malformed = std::array<std::string_view, 6>{
-	    "GET /\r\n\r\n",              // missing version
-	    "GET  / HTTP/1.1\r\n\r\n",    // doubled space: empty target
-	    "GET / HTTP/11\r\n\r\n",      // bad version shape
-	    "GET /a b HTTP/1.1\r\n\r\n",  // space inside target
-	    "G@T / HTTP/1.1\r\n\r\n",     // non-token method
-	    "\r\nGET / HTTP/1.1\r\n\r\n", // empty request line
+	    "GET /\r\n\r\n",
+	    "GET  / HTTP/1.1\r\n\r\n",
+	    "GET / HTTP/11\r\n\r\n",
+	    "GET /a b HTTP/1.1\r\n\r\n",
+	    "G@T / HTTP/1.1\r\n\r\n",
+	    "\r\nGET / HTTP/1.1\r\n\r\n",
 	};
 	auto passed = true;
 	for (auto const request : malformed) {
@@ -76,9 +72,9 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
 [[nodiscard]] auto check_malformed_headers() -> CaseResult {
 	using enum starter::HttpError;
 	auto const malformed = std::array<std::string_view, 3>{
-	    "GET / HTTP/1.1\r\nHost localhost\r\n\r\n", // no colon
-	    "GET / HTTP/1.1\r\nHo st: x\r\n\r\n",       // space in field name
-	    "GET / HTTP/1.1\r\n: value\r\n\r\n",        // empty field name
+	    "GET / HTTP/1.1\r\nHost localhost\r\n\r\n",
+	    "GET / HTTP/1.1\r\nHo st: x\r\n\r\n",
+	    "GET / HTTP/1.1\r\n: value\r\n\r\n",
 	};
 	auto passed = true;
 	for (auto const request : malformed) {
@@ -116,9 +112,6 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
 }
 
 [[nodiscard]] auto check_write_response_roundtrip() -> CaseResult {
-	// The writer's output head must parse back cleanly with the same shape
-	// rules the server applies to requests... responses share the field-line
-	// grammar, so reuse the parser on a synthetic request wrapping the head.
 	auto buffer = std::array<char, 256>{};
 	auto const headers = std::array{starter::HeaderView{.name = "Content-Type", .value = "text/plain"}};
 	auto const written =
@@ -140,7 +133,7 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
 	};
 }
 
-} // namespace
+}
 
 auto main() -> int {
 	auto const results = std::array{

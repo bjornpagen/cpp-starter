@@ -1,9 +1,6 @@
-# One importable named module per component: `starter` is the only export
-# surface and its internals are partitions, so outsiders physically cannot
-# import them. Every partition file plus the primary interface lives in this
-# one FILE_SET; CMake scans the partition dependencies itself. The :net
-# partition and its backend TU are quarantine code and are added to this
-# target from unsafe/CMakeLists.txt.
+# One importable named module: `starter` is the only export surface, its
+# partitions are unimportable internals. Quarantine partitions join this
+# target from unsafe/ and foreign/.
 add_library(starter_module)
 
 target_sources(starter_module
@@ -17,12 +14,8 @@ target_sources(starter_module
 			http.cc
 )
 
-# GCC 16.1 quirk: expansion statements (`template for`) re-declare the loop
-# variable in a nested scope per iteration, so any expansion over a range
-# with more than one element trips -Wshadow on compiler-generated scoping.
-# The :enums partition instantiates expansion statements, so the module
-# target drops -Wshadow; it stays on everywhere else (test TUs that
-# instantiate expansion statements carry their own source-level -Wno-shadow).
+# PIN(gcc-template-for-wshadow): the :enums partition instantiates expansion
+# statements — see PINS.md
 target_compile_options(starter_module PRIVATE -Wno-shadow)
 
 target_link_libraries(starter_module

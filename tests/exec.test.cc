@@ -1,9 +1,3 @@
-// exec.test.cc — senders conformance over the exported :exec surface: the
-// runtime spec of the vendored execution boundary. Each case drives one
-// probe-verified combinator chain end to end (compile coverage of the
-// vocabulary lives in the boundary itself; this TU proves the channels
-// behave: value, typed error with payload preserved, stopped, and the
-// thread-pool when_all join).
 import std;
 import starter;
 
@@ -79,7 +73,7 @@ using Expected = std::expected<std::int32_t, starter::ExecError>;
 	};
 }
 
-} // namespace
+}
 
 auto main() -> int {
 	auto const results = std::array{

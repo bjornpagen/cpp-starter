@@ -4,9 +4,7 @@ if(CMAKE_VERSION VERSION_LESS 4.2 OR CMAKE_VERSION VERSION_GREATER_EQUAL 4.3)
 	message(FATAL_ERROR "CMake 4.2.x is required: the import-std experimental UUID below is specific to the 4.2 series (got ${CMAKE_VERSION})")
 endif()
 
-# `import std` is experimental in CMake. This UUID gates the feature and is
-# specific to the CMake 4.2 series. On any CMake bump, re-read
-# Help/dev/experimental.rst and update the value.
+# PIN(cmake-import-std-uuid): the 4.2-series value — see PINS.md
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 
 project(starter LANGUAGES CXX)
@@ -16,9 +14,7 @@ option(STARTER_LINT_GRAPH
 	OFF
 )
 
-# The configure step decides whether the toolchain is acceptable; translation
-# units never negotiate features. Production: GCC 16.1.x. Lint: Clang 22.x.
-# Acquiring the toolchain is the developer's business (see README).
+# The configure step decides toolchain acceptability; TUs never negotiate features.
 if(STARTER_LINT_GRAPH)
 	if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 		message(FATAL_ERROR "the lint graph requires the pinned Clang toolchain (got ${CMAKE_CXX_COMPILER_ID})")
@@ -41,43 +37,30 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Centralized `import std` policy: every dialect target consumes the
-# standard-library named module. Do not set this per target.
+# Centralized `import std` policy: never set per target.
 set(CMAKE_CXX_MODULE_STD ON)
 
-# Exceptions/RTTI/reflection are part of the module ABI: the std module BMI
-# must be built with the same model as every importer (and `-freflection` is
-# required for the std module to export std::meta at all). CMake's
-# synthesized import-std targets only see global flags — so these are
-# global, not part of the language-profile target.
+# Module-ABI flags must be global: CMake's synthesized import-std targets see
+# only CMAKE_CXX_FLAGS, and the std module BMI must match every importer.
 string(APPEND CMAKE_CXX_FLAGS " -fno-exceptions -fno-rtti")
 
 if(NOT STARTER_LINT_GRAPH)
-	# Reflection is not negotiable: the version gate above guarantees GCC
-	# 16.1.x, which implements it.
+	# -freflection is required for the std module to export std::meta at all.
 	string(APPEND CMAKE_CXX_FLAGS " -freflection")
-	# Contracts (P2900) linkage moved to the language-profile target below:
-	# GNU ld resolves left-to-right and CMAKE_EXE_LINKER_FLAGS precede the
-	# object files, so the -l flag spelling satisfies nothing on Linux.
 endif()
 
-# ----------------------------------------------------------------------------
-# Language profile: the single build-system source of truth for the dialect.
-# Every dialect target links this and nothing redefines these requirements.
-# ----------------------------------------------------------------------------
+# Language profile: the single source of truth for the dialect; every dialect
+# target links it and nothing redefines these requirements.
 add_library(starter_language_profile INTERFACE)
 
 target_compile_features(starter_language_profile INTERFACE cxx_std_26)
 
 if(NOT STARTER_LINT_GRAPH)
-	# Contracts (P2900): handle_contract_violation lives in libstdc++exp.
-	# Linked as an interface library so it lands AFTER the object files on
-	# the link line — GNU ld resolves left-to-right; macOS ld64 masked this.
+	# PIN(cmake-ld-link-order): the contracts runtime must land after every
+	# consumer's object files — see PINS.md
 	target_link_libraries(starter_language_profile INTERFACE stdc++exp)
 endif()
 
-# -fno-exceptions / -fno-rtti are global (see CMAKE_CXX_FLAGS above): they
-# must also apply to the CMake-synthesized std module compilation.
 target_compile_options(starter_language_profile INTERFACE
 	-Werror
 	-Wall
@@ -93,46 +76,22 @@ target_compile_options(starter_language_profile INTERFACE
 	"$<$<CXX_COMPILER_ID:GNU>:-Wuseless-cast;-Wduplicated-branches;-Wduplicated-cond;-Wlogical-op>"
 )
 
-# The starter module's partitions use C++26 reflection, which makes the
-# whole module GCC-only as a unit, and every executable here imports it. The
-# Clang lint graph covers only the Clang-parseable remainder — and today
-# that remainder is empty: every TU either imports the starter module or is
-# one of the two swap-boundary backend TUs, which consume the vendored
-# stdexec headers that only this graph's targets may see. The lint preset
-# still enforces its toolchain gate and configure-time sanity.
+# Reflection makes the starter module GCC-only as a unit; the Clang lint
+# graph covers only the Clang-parseable remainder, which today is empty.
 if(NOT STARTER_LINT_GRAPH)
-	# stdexec: the pinned std::execution reference implementation backing the
-	# sender/receiver dialect surface until libstdc++ ships __cpp_lib_senders
-	# (tombstone in tests/conformance.test.cc). Pinned to the immutable
-	# revision below per AGENTS.md §3.7 — never a moving branch/tag, so the
-	# acquired source is reproducible byte-for-byte.
-	#
-	# Consumed from OUR MAINTAINED FORK, not upstream: every fork commit is
-	# an individually-upstreamable fix with a pending PR (policy and
-	# per-branch PR briefs: FORK.md in the fork), and the fork's success
-	# condition is its own emptiness as upstream absorbs the delta.
-	#
+	# PIN(gcc-gmf-stdexec-ice): stdexec backs the swap boundary until
+	# libstdc++ ships __cpp_lib_senders — see PINS.md. Consumed from our
+	# maintained fork (policy: FORK.md in the fork), pinned to an immutable
+	# revision:
 	#   fork      https://github.com/bjornpagen/stdexec  (branch: integration)
 	#   upstream  https://github.com/NVIDIA/stdexec
 	#   revision  0d8cfba62800bbe6604c3325ec29291e256614d8  (2026-08-09)
 	#             = upstream fd60b20a
-	#             + fix(__spin_loop_pause): ill-formed 'inline inline' on the
-	#               ARM branch — hard GCC error on every arm build since
-	#               upstream f0e8ae6f; fix also gives the ALWAYS_INLINE macro
-	#               fallback branch a plain 'inline' so nvcc/NVHPC/EDG keep
-	#               inline linkage (their expansion was empty)
-	#               [submitted: github.com/NVIDIA/stdexec/pull/2167]
-	#             + fix(sync_wait): terminate instead of misreporting errors
-	#               as stopped when exceptions are unavailable
-	#               [submitted: github.com/NVIDIA/stdexec/pull/2168]
-	#
-	# Header-only consumption: SOURCE_SUBDIR points at include/, which has no
-	# CMakeLists.txt, so FetchContent_MakeAvailable populates the source tree
-	# without ever running stdexec's own build (which would fetch
-	# rapids-cmake). The include path is applied SYSTEM PRIVATE to the one
-	# swap-boundary target in foreign/CMakeLists.txt; no other target may see
-	# these headers.
-	#
+	#             + fix(__spin_loop_pause)  [NVIDIA/stdexec PR 2167]
+	#             + fix(sync_wait)          [NVIDIA/stdexec PR 2168]
+	# Header-only: SOURCE_SUBDIR include/ has no CMakeLists.txt, so stdexec's
+	# own build never runs; the path is SYSTEM PRIVATE to the two
+	# swap-boundary targets only.
 	include(FetchContent)
 	FetchContent_Declare(stdexec
 		GIT_REPOSITORY https://github.com/bjornpagen/stdexec.git
@@ -152,9 +111,8 @@ if(NOT STARTER_LINT_GRAPH)
 	add_subdirectory(tests)
 endif()
 
-# The CMake-internal target that builds the standard-library module is not
-# project code: clang-tidy must not run over it, and it must be compiled as
-# strict c++26 (not gnu++26) or its BMI is rejected by our translation units.
+# The CMake-internal std-module target is not project code: no clang-tidy,
+# and strict c++26 (a gnu++26 BMI is rejected by our translation units).
 if(TARGET __cmake_cxx26)
 	set_property(TARGET __cmake_cxx26 PROPERTY CXX_EXTENSIONS OFF)
 	if(STARTER_LINT_GRAPH)

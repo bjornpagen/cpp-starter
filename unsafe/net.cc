@@ -1,25 +1,13 @@
-// Networking surface over the kqueue io-context in net.backend.cc. The
-// exported interface is dialect-clean; every socket/kevent syscall and every
-// sender composition lives in the plain backend TU and is reached through
-// the extern "C++" narrow ABI below (same mechanism and rationale as the
-// :exec chains — the pinned GCC 16.1 ICEs when a stdexec header appears in
-// any module unit, so senders cannot cross the module boundary; what
-// crosses is the executable spec of the boundary).
-//
-// What the backend implements per worker: an owned kqueue reactor
-// (IoContext with run/stop) and readiness-completing senders async_accept /
-// async_read / async_write composed into an accept -> read -> handle ->
-// write -> close chain. One shared nonblocking loopback listener is raced
-// by all workers (Darwin SO_REUSEPORT does not load-balance; rationale
-// pinned in net.backend.cc). Thread-per-core and share-nothing otherwise:
-// no mutable state is shared between workers and no lock is visible here
-// or above.
+/**
+ * Thread-per-core share-nothing networking: no mutable state is shared
+ * between workers and no lock is visible at or above this surface
+ * (concurrency model: unsafe/README.md).
+ */
 export module starter:net;
 
 import std;
 
-// Narrow ABI to the backend TU: declarations attached to the global module,
-// matching the plain definitions in net.backend.cc.
+/* PIN(gcc-gmf-stdexec-ice): narrow ABI to the plain backend TU — senders cannot cross the module boundary; see PINS.md */
 extern "C++" {
 namespace starter::net_backend {
 
@@ -42,13 +30,16 @@ auto interrupt_wait() noexcept -> void;
 
 auto output_flush() noexcept -> void;
 
-} // namespace starter::net_backend
+}
 }
 
 namespace starter {
 
-// Which stage of bringing up or running the server failed. Values mirror
-// the stage_* constants in net.backend.cc (narrow scalar ABI; keep in sync).
+/**
+ * Which stage of bringing up or running the server failed. Values mirror
+ * the stage_* constants in net.backend.cc (narrow scalar ABI; keep in
+ * sync).
+ */
 export enum class NetStage : std::int32_t {
 	SocketCreate = 1,
 	SocketOption = 2,
@@ -62,40 +53,43 @@ export enum class NetStage : std::int32_t {
 	Write = 10,
 };
 
-// The typed network error: the failing stage plus its errno payload. Sender
-// error channels inside the boundary carry this as a value (AGENTS.md §11);
-// synchronous startup failure carries it through std::expected.
+/**
+ * The typed network error: the failing stage plus its errno payload.
+ * Flows as a value through sender error channels and std::expected.
+ */
 export struct [[nodiscard]] NetError {
 	NetStage stage;
 	std::int32_t code;
 
-	// Spelled out, not `= default`: GCC 16.1 pinned quirk — streaming a
-	// defaulted comparison of an exported partition type through the BMI
-	// ICEs the importer. Re-try `= default` on the next toolchain bump.
+	/* PIN(gcc-modules-defaulted-eq): spelled out, not = default — see PINS.md */
 	[[nodiscard]] constexpr auto operator==(NetError const& other) const -> bool {
 		return stage == other.stage && code == other.code;
 	}
 };
 
 export struct HttpServerConfig {
-	std::uint16_t port;    // 0 requests a kernel-chosen ephemeral port
-	std::uint32_t workers; // clamped to [1, 4] by the backend
+	/** 0 requests a kernel-chosen ephemeral port. */
+	std::uint16_t port;
+	/** Clamped to [1, 4] by the backend. */
+	std::uint32_t workers;
 };
 
-// A stateless per-request handler: worker id + request bytes in, response
-// bytes into `out`, returning the response size (0 = close without
-// replying). Statelessness is structural (empty, default-initializable), so
-// the handler can cross the narrow ABI as a plain trampoline with zero
-// captured state — which is also exactly the share-nothing worker contract.
+/**
+ * Statelessness is structural — emptiness and default-initializability
+ * let the handler cross the narrow ABI as a plain trampoline with zero
+ * captured state.
+ */
 export template<class F>
 concept RequestHandler = std::is_empty_v<F> && std::default_initializable<F> &&
                          requires(F const handler, std::uint32_t worker, std::string_view request, std::span<char> out) {
 	                         { handler(worker, request, out) } -> std::same_as<std::size_t>;
                          };
 
-// A running share-nothing HTTP server: a unique capability over the
-// backend's workers. stop() is idempotent and returns once every worker has
-// quiesced; destruction stops and joins.
+/**
+ * A unique capability over the backend's workers: stop() is idempotent
+ * and returns once every worker has quiesced; destruction stops and
+ * joins.
+ */
 export class [[nodiscard]] HttpServer {
 public:
 	HttpServer(HttpServer&& other) noexcept : impl_{std::exchange(other.impl_, nullptr)} {}
@@ -115,7 +109,7 @@ public:
 		reset();
 	}
 
-	// The port actually bound (resolves a config.port == 0 request).
+	/** The port actually bound (resolves a config.port == 0 request). */
 	[[nodiscard]] auto port() const -> std::uint16_t {
 		contract_assert(impl_ != nullptr);
 		return net_backend::server_port(*impl_);
@@ -127,8 +121,7 @@ public:
 		}
 	}
 
-	// Used by serve_http; not callable from importers (they cannot name
-	// net_backend::Server).
+	/** Usable only by serve_http: importers cannot name net_backend::Server. */
 	explicit HttpServer(net_backend::Server& impl) : impl_{&impl} {}
 
 private:
@@ -141,8 +134,13 @@ private:
 	net_backend::Server* impl_;
 };
 
-// Starts config.workers share-nothing workers, each with its own io-context,
-// racing nonblocking accepts on one shared loopback listener.
+/**
+ * Starts config.workers share-nothing workers (clamped to [1, 4]), each
+ * owning its own io-context, racing accepts on one shared loopback
+ * listener. On failure no server exists — nothing to clean up; the
+ * NetError's stage and errno say what refused. Loopback-only by design:
+ * not a public-interface listener.
+ */
 export template<RequestHandler F>
 [[nodiscard]] auto serve_http(HttpServerConfig config, F) -> std::expected<HttpServer, NetError> {
 	auto stage = std::int32_t{0};
@@ -159,23 +157,18 @@ export template<RequestHandler F>
 	return HttpServer{*impl};
 }
 
-// One worker per hardware thread is the share-nothing default; callers cap
-// it (the example uses std::min(hardware_workers(), 4)).
 export [[nodiscard]] auto hardware_workers() -> std::uint32_t {
 	return net_backend::hardware_worker_count();
 }
 
-// Blocks until SIGINT/SIGTERM. The signal machinery (dispositions plus a
-// kqueue EVFILT_SIGNAL wait) lives entirely in the backend; no handler runs
-// user code.
+/** Blocks until SIGINT or SIGTERM; no signal handler runs user code. */
 export auto wait_for_interrupt() -> void {
 	net_backend::interrupt_wait();
 }
 
-// Flushes buffered standard output — needed before blocking, because stdout
-// is fully buffered when piped (the smoke test reads the printed port).
+/** Call before blocking: stdout is fully buffered when piped. */
 export auto flush_output() -> void {
 	net_backend::output_flush();
 }
 
-} // namespace starter
+}

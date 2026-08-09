@@ -1,43 +1,36 @@
-// HTTP/1.1 request-head parser and response writer. Pure dialect: borrowed
-// text in (std::string_view over the connection's read buffer), views out —
-// RequestView is an ephemeral view product into the caller's buffer and must
-// not outlive it. No allocation anywhere: headers land in a fixed array
-// and the response is formatted directly into the caller's buffer. The
-// parser distinguishes a torn buffer (Incomplete: keep reading) from a
-// protocol violation (Malformed: reject), which is the whole error contract
-// a readiness-driven server needs.
 export module starter:http;
 
 import std;
 
 namespace starter {
 
+/**
+ * Incomplete is the torn-buffer signal, not a rejection: the head
+ * terminator has not arrived yet, so the caller keeps reading.
+ */
 export enum class [[nodiscard]] HttpError : std::uint8_t {
-	Incomplete,     // no head terminator yet: not an error, read more bytes
-	Malformed,      // protocol violation: reject the request
-	TooManyHeaders, // more than max_header_count field lines
-	BufferTooSmall, // response does not fit the caller's buffer
+	Incomplete,
+	Malformed,
+	TooManyHeaders,
+	BufferTooSmall,
 };
 
 export inline constexpr std::size_t max_header_count = 32;
 
-// One field line, borrowed from the request buffer (value has OWS trimmed).
 export struct HeaderView {
 	std::string_view name;
 	std::string_view value;
 };
 
-// The parsed request head, borrowed from the request buffer. The header list
-// is spelled array + count instead of the blessed
-// std::inplace_vector<HeaderView, max_header_count>: GCC 16.1 pinned quirk —
-// an inplace_vector member of an exported partition type streams a BMI the
-// importer rejects ("failed to read compiled module cluster: Bad file
-// data"). Re-try inplace_vector on the next toolchain bump. Only
-// headers[0 .. header_count) are meaningful.
+/**
+ * The parsed request head: views borrowed from the parse input, valid only
+ * while that buffer is. Only headers[0 .. header_count) are meaningful.
+ */
 export struct RequestView {
 	std::string_view method;
 	std::string_view target;
 	std::string_view version;
+	/* PIN(gcc-partition-bmi-inplace-vector): array + count, not inplace_vector — see PINS.md */
 	std::array<HeaderView, max_header_count> headers;
 	std::size_t header_count;
 };
@@ -47,7 +40,6 @@ namespace {
 constexpr std::string_view crlf = "\r\n";
 constexpr std::string_view head_terminator = "\r\n\r\n";
 
-// RFC 9110 token characters (field names and methods).
 [[nodiscard]] constexpr auto is_tchar(char c) -> bool {
 	if (c >= 'a' && c <= 'z') {
 		return true;
@@ -65,13 +57,10 @@ constexpr std::string_view head_terminator = "\r\n\r\n";
 	return !text.empty() && std::ranges::all_of(text, is_tchar);
 }
 
-// Visible characters only: what a request-target may contain (no SP, no
-// controls, no DEL).
 [[nodiscard]] constexpr auto is_vchar(char c) -> bool {
 	return c > '\x20' && c != '\x7f';
 }
 
-// Field values may additionally contain SP and HTAB between visible chars.
 [[nodiscard]] constexpr auto is_field_char(char c) -> bool {
 	return is_vchar(c) || c == ' ' || c == '\t';
 }
@@ -92,7 +81,6 @@ constexpr std::string_view head_terminator = "\r\n\r\n";
 	       (text[7] >= '0' && text[7] <= '9');
 }
 
-// Splits off the next CRLF-terminated line; the final line owns the rest.
 [[nodiscard]] constexpr auto next_line(std::string_view& remaining) -> std::string_view {
 	auto const end = remaining.find(crlf);
 	if (end == std::string_view::npos) {
@@ -112,13 +100,8 @@ constexpr std::string_view head_terminator = "\r\n\r\n";
 	return width;
 }
 
-} // namespace
+}
 
-// Parses the request head (request line + field lines) out of `input`. The
-// head must end with CRLF CRLF; until that terminator arrives the result is
-// HttpError::Incomplete, so a caller with a torn buffer keeps reading.
-// (Not constexpr/inline: an exported inline function may not reach the
-// TU-local helpers above.)
 export [[nodiscard]] auto parse_request(std::string_view input) -> std::expected<RequestView, HttpError> {
 	auto const head_end = input.find(head_terminator);
 	if (head_end == std::string_view::npos) {
@@ -174,10 +157,11 @@ export struct ResponseHead {
 	std::string_view reason;
 };
 
-// Writes a complete HTTP/1.1 response (status line, the given field lines, a
-// derived Content-Length, blank line, body) into the caller's buffer and
-// returns the byte count. The size is computed up front so a short buffer is
-// BufferTooSmall before a single byte is written; nothing allocates.
+/**
+ * Writes the full response — status line, `headers`, a derived
+ * Content-Length, blank line, `body` — into `out` and returns the byte
+ * count. The size is computed first, so on failure `out` is untouched.
+ */
 export [[nodiscard]] auto write_response(ResponseHead head, std::span<HeaderView const> headers, std::string_view body, std::span<char> out)
     -> std::expected<std::size_t, HttpError> {
 	constexpr std::string_view status_prefix = "HTTP/1.1 ";
@@ -214,4 +198,4 @@ export [[nodiscard]] auto write_response(ResponseHead head, std::span<HeaderView
 	return written;
 }
 
-} // namespace starter
+}

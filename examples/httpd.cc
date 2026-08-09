@@ -1,13 +1,3 @@
-// httpd — thread-per-core share-nothing HTTP/1.1 example over the exported
-// :net and :http surfaces. N workers (hardware concurrency, capped at 4),
-// each owning its OWN kqueue io-context, racing accepts on one shared
-// loopback listener; per connection: accept -> read -> parse -> respond 200
-// text/plain with the worker id and request path -> close. Zero cross-worker
-// state: the handler is structurally stateless (RequestHandler concept) and
-// each response is a pure function of (worker id, request bytes).
-//
-// The server binds an ephemeral port (config.port = 0) and prints the
-// resolved port on stdout; SIGINT/SIGTERM shuts it down cleanly.
 import std;
 import starter;
 
@@ -30,7 +20,7 @@ struct WorkerHandler {
 	}
 };
 
-} // namespace
+}
 
 auto main() -> int {
 	auto const workers = std::min(starter::hardware_workers(), std::uint32_t{4});
