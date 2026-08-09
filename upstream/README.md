@@ -61,27 +61,29 @@ that evidence. The fixincludes patch is unaffected in substance
 but its bootstrap evidence also comes from Linux (gate 3), since a native
 darwin trunk bootstrap is impossible by construction.
 
-## Gates (machine work, in flight — each gate updates its SUBMIT and then
-## deletes itself from this list)
+## Gates (each gate updates its SUBMIT and then deletes itself here)
 
-1. **genfixes regeneration** (needs `sudo port install autogen`):
-   regenerate `fixincl.x` from the patched `inclhack.def`, diff against
-   the hand-written hunk; if identical, delete the "Note on fixincl.x"
-   caveat from the SUBMIT body; if not, take the regenerated version and
-   re-run the self-test.
-2. **Vanilla ICE evidence** (CI, branch `upstream-verify`): official
-   `gcc:16.1.0` images (amd64 + arm64) run both repros — paste the
-   verbatim ICE outputs and platforms into the two ICE SUBMITs; the
-   trunk-quick job adds a "still reproduces on trunk @ <sha>" line (or a
-   fixed-on-trunk verdict, which would change the reports to regression
-   notes against 16.1).
-3. **Bootstrap + regtest** (CI): full default-language bootstrap of the
-   patched trunk plus `make -k check` on aarch64-linux-gnu, summary
-   artifact kept — becomes the one-line testing statement in the
-   fixincludes SUBMIT. The same job runs the real fixincludes
-   `make check` (autogen available there).
-4. **Final read-through** of each SUBMIT after gates land: no pending
-   sections may remain when sending.
+- ~~genfixes regeneration~~ **CLEARED 2026-08-09**: AutoGen 5.18.16 via
+  the vanilla container; regenerated `fixincl.x` == hand-written hunk
+  except the dated header; regenerated version adopted (amended commit
+  `64ba9daf`, commit gate re-passed), caveat deleted from the SUBMIT.
+- ~~Vanilla ICE evidence~~ **CLEARED 2026-08-09**: both ICEs reproduce
+  on official FSF `gcc:16.1.0` on aarch64-linux-gnu (local finch
+  container) AND x86_64 + aarch64 (CI) — with symbolic backtraces
+  (`module_state::mangle` for friend-eq; `transfer_defining_module` ←
+  `duplicate_decls` for GMF), now in the SUBMIT bodies.
+- ~~fixincludes real `make check`~~ **CLEARED 2026-08-09**: passed in CI
+  with autogen present, over the patched trunk.
+1. **Trunk ICE status** (CI trunk-quick, in flight): add the "still
+   reproduces on trunk @ <sha>" line to both ICE SUBMITs (the marked
+   `[gate 2 — pending]` slots), or the fixed-on-trunk verdict, which
+   would turn the reports into regression notes against 16.1.
+2. **Bootstrap + regtest** (CI bootstrap-regtest, in flight): full
+   default-language bootstrap of the patched trunk plus `make -k check`
+   on aarch64-linux-gnu, summary artifact — becomes the one-line
+   testing statement in the fixincludes SUBMIT.
+3. **Final read-through** of each SUBMIT after gates land: no pending
+   markers may remain when sending.
 
 ## The send procedure (in order; do not reorder)
 

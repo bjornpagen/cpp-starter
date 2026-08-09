@@ -2,7 +2,10 @@
 
 - **Where:** GCC Bugzilla, component `c++`, Version `16.1.0`, keywords `ice-on-valid-code`; "[modules]" in the summary
 - **Kind:** bug report with verified 2-file repro (`a.cc`, `b.cc`)
-- **Verified:** g++-16 (GCC) 16.1.0, aarch64-apple-darwin24 — re-verified cold 2026-08-09, commands exactly as below
+- **Verified:** official FSF `gcc:16.1.0` images, aarch64-linux-gnu AND
+  x86_64-linux-gnu (2026-08-09, two independent environments: local
+  container + CI) — symbolic backtrace obtained; plus the darwin-arm64
+  port build (re-verified cold 2026-08-09)
 - **Verdict:** SEND
 
 ## Duplicate search (GCC Bugzilla, 2026-08-09)
@@ -48,23 +51,43 @@ int main() {
 }
 ```
 
+Transcript from an official FSF build (Docker library image
+`gcc:16.1.0`, aarch64-linux-gnu):
+
 ```
-$ g++-16 -std=c++26 -fmodules -c a.cc      # OK, exit 0
-$ g++-16 -std=c++26 -fmodules -c b.cc
+$ g++ -std=c++26 -fmodules -c a.cc      # OK, exit 0
+$ g++ -std=c++26 -fmodules -c b.cc
 In module A, imported at b.cc:1:
-a.cc:5:31: internal compiler error: Segmentation fault: 11
+a.cc:5:31: internal compiler error: Segmentation fault
     5 |         friend constexpr bool operator==(Mask const&, Mask const&) = default;
       |                               ^~~~~~~~
-/Users/bjorn/.gcc/versions/16.1.0/libexec/gcc/aarch64-apple-darwin24/16.1.0/cc1plus -quiet -D__DYNAMIC__ b.cc -fPIC -quiet -dumpbase b.cc -dumpbase-ext .cc -mmacosx-version-min=15.0.0 -mcpu=apple-m1 -mlittle-endian -mabi=lp64 -std=c++26 -fmodules -o /var/folders/.../cciU2rXF.s
+0x20108cf diagnostics::context::diagnostic_impl(rich_location*, diagnostics::metadata const*, diagnostics::option_id, char const*, std::__va_list*, diagnostics::kind)
+	???:0
+0x2009a93 internal_error(char const*, ...)
+	???:0
+0x953490 module_state::mangle(bool)
+	???:0
+0x938673 mangle_decl(tree_node*)
+	???:0
+0x1394f17 decl_assembler_name(tree_node*)
+	???:0
+0xbde647 symbol_table::finalize_compilation_unit()
+	???:0
+/usr/local/libexec/gcc/aarch64-linux-gnu/16.1.0/cc1plus -quiet -imultiarch aarch64-linux-gnu -D_GNU_SOURCE b.cc -quiet -dumpbase b.cc -dumpbase-ext .cc -mlittle-endian -mabi=lp64 -std=c++26 -fmodules -o /tmp/ccucPVhV.s
 Please submit a full bug report, with preprocessed source (by using -freport-bug).
+Please include the complete backtrace with any bug report.
 See <https://gcc.gnu.org/bugs/> for instructions.
 ```
 
-No further backtrace is printed (compiler built with
-`--enable-checking=release`). Under a debugger the crash is
-EXC_BAD_ACCESS reading address 0x74 (a near-null dereference) in
-cc1plus; no symbolic frames are available from the installed stripped
-binary.
+The crash is in `module_state::mangle` while finalizing the importer's
+compilation unit. The identical ICE with the same frames (addresses
+differ, e.g. `module_state::mangle` at 0x9278d8) reproduces on
+x86_64-linux-gnu with the same official image. It also reproduces on
+aarch64-apple-darwin24 with GCC 16.1.0 built from the FSF release
+tarball plus the darwin-arm64 port series (upstream has no
+aarch64-darwin target); that build prints no backtrace
+(`--enable-checking=release`, stripped cc1plus) — under a debugger the
+crash there is EXC_BAD_ACCESS reading address 0x74.
 
 The code is valid: a defaulted comparison operator function may be a
 non-member friend of the class ([class.compare.default]/1), and the
@@ -81,10 +104,21 @@ Additional data points (each re-verified on 16.1.0):
   is unaffected — importer compiles and runs correctly (that is the
   workaround we ship).
 
-Environment:
-- g++-16 (GCC) 16.1.0
-- Build/host/target: aarch64-apple-darwin24 (native)
-- Configured with: ../gcc-16.1.0/configure --prefix=$HOME/.gcc/versions/16.1.0
-  --enable-languages=c,c++ --disable-nls --enable-checking=release
-  --program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
-  --with-sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+Environment (primary — official FSF release build, Docker library image
+`gcc:16.1.0`):
+- g++ (GCC) 16.1.0
+- Target: aarch64-linux-gnu (also reproduced: x86_64-linux-gnu, same image family)
+- Configured with: /usr/src/gcc/configure --build=aarch64-linux-gnu
+  --disable-multilib --enable-languages=c,c++,fortran,go
+
+Also reproduced (corroboration): aarch64-apple-darwin24, GCC 16.1.0
+built from the FSF release tarball plus the darwin-arm64 port series —
+the configuration the macOS package managers ship; noted here because
+upstream trunk has no aarch64-darwin target. Configured with:
+../gcc-16.1.0/configure --prefix=$HOME/.gcc/versions/16.1.0
+--enable-languages=c,c++ --disable-nls --enable-checking=release
+--program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
+--with-sysroot=<Xcode MacOSX.sdk>
+
+Trunk status: [gate 2 — pending the in-flight trunk build; add the
+verdict line here before sending].

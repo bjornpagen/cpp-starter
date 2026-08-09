@@ -102,10 +102,8 @@ own plain-typedef branch; the header is unchanged for clang. A `bypass`
 on `__clang__` keeps the fix idempotent and skips SDKs that already check
 for clang. tests/base fixture included; fixincl.x regenerated.
 
-Note on fixincl.x: autogen is not available on the build machine, so the
-fixincl.x hunk was written by hand to match the autogen template output
-exactly (verified by building fixincl from the patched tree and running
-the tests below); feel free to re-run ./genfixes when applying.
+fixincl.x regenerated with ./genfixes (AutoGen 5.18.16); tests/base
+fixture included.
 
 ## Testing done (state this in the email; re-verified 2026-08-09 on a clean trunk clone)
 
@@ -149,24 +147,29 @@ only if a reviewer asks:
   the established `tests/base` wrapper convention (same form in
   `assert.h`, `AvailabilityMacros.h`, `time.h`, ...).
 
+## genfixes gate: CLEARED (2026-08-09)
+
+`./genfixes` run with AutoGen 5.18.16 (vanilla gcc:16.1.0 container over
+the patched tree): the regenerated `fixincl.x` matched the hand-written
+hunk byte-for-byte except the dated "AutoGen-ed ..." header. The
+regenerated file was adopted into the patch (amended commit `64ba9daf`,
+`git_check_commit.py` re-passed `OK`); the hand-written caveat is gone
+from the body above.
+
+## fixincludes `make check` gate: CLEARED (2026-08-09)
+
+The real `make check` (autogen present, Linux CI over the patched
+trunk): passed — this supersedes the earlier manual replication of
+check.sh's steps, which remains recorded above as the darwin-side
+verification.
+
 ## Still to run before sending (contribute.html's testing bar)
 
-Policy: a change outside the front ends requires a complete build —
-"bootstrap all default languages, not just C and C++, and run all
-testsuites" — with results compared against pre-patch or gcc-testresults
-postings, and the email's testing statement must say so. Two steps
-remain, both in motion:
-
-1. **Full bootstrap of the patched trunk** (default languages, darwin
-   arm64) — running in `~/Documents/gcc-verify-build` (branch
-   `verify-rsize-t` = trunk + exactly this patch). When it finishes:
-   `make -k check` (requires DejaGnu), compare against current
-   aarch64-apple-darwin gcc-testresults postings, then replace this
-   section with one line: "Bootstrapped and regression-tested on
-   aarch64-apple-darwin24 (all default languages); test results compared
-   against <baseline>."
-2. **`./genfixes` regeneration** (requires autogen): regenerate
-   fixincl.x from the patched inclhack.def, diff against the
-   hand-written hunk. If identical, delete the "Note on fixincl.x"
-   caveat paragraph from the body; if it differs, take the regenerated
-   version into the patch and re-run the self-test.
+One step remains, in motion: **full bootstrap + regression test of the
+patched trunk** — all default languages plus `make -k check`, running in
+CI on aarch64-linux-gnu (a native darwin trunk bootstrap is impossible:
+upstream has no aarch64-darwin target; the port is out of tree). When
+the artifact lands, replace this section with one line: "Bootstrapped
+(all default languages) and regression-tested with make -k check on
+aarch64-linux-gnu; test summary attached / compared against
+gcc-testresults."
