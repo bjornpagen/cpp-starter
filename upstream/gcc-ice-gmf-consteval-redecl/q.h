@@ -1,4 +1,2 @@
-module;
 extern int const q;
 inline constexpr int q = 1;
-export module m;

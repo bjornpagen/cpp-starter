@@ -80,9 +80,10 @@ consteval auto inplace_vector_bounded_push() -> bool {
 	v.push_back(1);
 	v.push_back(2);
 	v.push_back(3);
-	// Full: try_push_back reports the bound instead of allocating. Pinned
-	// toolchain quirk: GCC 16.1 returns std::optional<int&> here, not the
-	// standard's T* — hence the nullopt comparison instead of nullptr.
+	// Full: try_push_back reports the bound instead of allocating. The
+	// optional<T&> return (not P0843R14's T*) is CONFORMING: P3981R2
+	// ("Better return types in std::inplace_vector...", adopted 2026-03)
+	// changed it; libstdc++ tracks the working draft. Not a GCC quirk.
 	return v.size() == 3 && v.try_push_back(4) == std::nullopt && v[0] == 1 && v[2] == 3 && decltype(v)::capacity() == 3;
 }
 

@@ -107,19 +107,21 @@ if(NOT STARTER_LINT_GRAPH)
 	# acquired source is reproducible byte-for-byte.
 	#
 	# Consumed from OUR MAINTAINED FORK, not upstream: every fork commit is
-	# an individually-upstreamable fix with a pending PR (policy: FORK.md in
-	# the fork; upstream/ here carries the submission drafts), and the fork's
-	# success condition is its own emptiness as upstream absorbs the delta.
+	# an individually-upstreamable fix with a pending PR (policy and
+	# per-branch PR briefs: FORK.md in the fork), and the fork's success
+	# condition is its own emptiness as upstream absorbs the delta.
 	#
 	#   fork      https://github.com/bjornpagen/stdexec  (branch: integration)
 	#   upstream  https://github.com/NVIDIA/stdexec
-	#   revision  4c1b31aff932879159fb8a79e977eb8a5034d422  (2026-08-09)
+	#   revision  0fb4c137536329fdd720ffc0c5ca737264f778b0  (2026-08-09)
 	#             = upstream fd60b20a
-	#             + fix(__spin_loop_pause): duplicate 'inline' — a hard GCC
-	#               error on every arm build since upstream f0e8ae6f (clang
-	#               merely warns, which is why their CI stayed green)
-	#             + fix(sync_wait): terminate instead of misreporting typed
-	#               errors as stopped when exceptions are unavailable
+	#             + fix(__spin_loop_pause): ill-formed 'inline inline' on the
+	#               ARM branch — hard GCC error on every arm build since
+	#               upstream f0e8ae6f; fix also gives the ALWAYS_INLINE macro
+	#               fallback branch a plain 'inline' so nvcc/NVHPC/EDG keep
+	#               inline linkage (their expansion was empty)
+	#             + fix(sync_wait): terminate instead of misreporting errors
+	#               as stopped when exceptions are unavailable
 	#
 	# Header-only consumption: SOURCE_SUBDIR points at include/, which has no
 	# CMakeLists.txt, so FetchContent_MakeAvailable populates the source tree
@@ -131,7 +133,7 @@ if(NOT STARTER_LINT_GRAPH)
 	include(FetchContent)
 	FetchContent_Declare(stdexec
 		GIT_REPOSITORY https://github.com/bjornpagen/stdexec.git
-		GIT_TAG 4c1b31aff932879159fb8a79e977eb8a5034d422
+		GIT_TAG 0fb4c137536329fdd720ffc0c5ca737264f778b0
 		SOURCE_SUBDIR include
 	)
 	FetchContent_MakeAvailable(stdexec)
