@@ -39,10 +39,32 @@ namespace starter::net_backend {
 
 using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity);
 
+[[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool {
+	switch (code) {
+	case EINTR:
+	case EAGAIN:
+#if EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+	case ECONNRESET:
+	case ECONNABORTED:
+	case EPIPE:
+	case ETIMEDOUT:
+	case ENETRESET:
+	case EMFILE:
+	case ENFILE:
+	case ENOBUFS:
+	case ENOMEM:
+		return true;
+	default:
+		return false;
+	}
+}
+
 namespace {
 
 inline constexpr std::uint32_t max_workers = 4;
-inline constexpr std::size_t buffer_capacity = 8192;
+inline constexpr std::size_t buffer_bytes = 8192;
 inline constexpr int listen_backlog = 256;
 inline constexpr std::uintptr_t stop_ident = 1;
 
@@ -244,8 +266,8 @@ public:
 		return fd_;
 	}
 
-	std::array<char, buffer_capacity> in{};
-	std::array<char, buffer_capacity> out{};
+	std::array<char, buffer_bytes> in{};
+	std::array<char, buffer_bytes> out{};
 
 private:
 	auto close_fd() noexcept -> void {
@@ -521,8 +543,12 @@ struct ChainReceiver {
 		w->restart = true;
 	}
 
-	auto set_error(NetErr) && noexcept -> void {
-		w->restart = true;
+	auto set_error(NetErr err) && noexcept -> void {
+		if (err_transient(err.code)) {
+			w->restart = true;
+		} else {
+			w->finished = true;
+		}
 	}
 
 	/** Unreachable under -fno-exceptions; reaching it is process failure. */
@@ -724,6 +750,10 @@ struct TaskFactory {
 	}
 };
 
+}
+
+[[nodiscard]] auto buffer_capacity() noexcept -> std::size_t {
+	return buffer_bytes;
 }
 
 struct Server {

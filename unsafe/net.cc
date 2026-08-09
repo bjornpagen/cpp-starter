@@ -15,6 +15,10 @@ struct Server;
 
 using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity);
 
+[[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool;
+
+[[nodiscard]] auto buffer_capacity() noexcept -> std::size_t;
+
 [[nodiscard]] auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage,
                                 std::int32_t& err_code) noexcept -> Server*;
 
@@ -61,11 +65,27 @@ export struct [[nodiscard]] NetError {
 	NetStage stage;
 	std::int32_t code;
 
+	/**
+	 * Could the same operation, retried with nothing changed, plausibly
+	 * succeed? Peer casualties and resource pressure: yes. Structural
+	 * errnos and anything unrecognized: no. Stage-independent.
+	 */
+	[[nodiscard]] auto is_transient() const -> bool {
+		return net_backend::err_transient(code);
+	}
+
 	/* PIN(gcc-modules-defaulted-eq): spelled out, not = default — see PINS.md */
 	[[nodiscard]] constexpr auto operator==(NetError const& other) const -> bool {
 		return stage == other.stage && code == other.code;
 	}
 };
+
+/**
+ * Wire-facing bounds: a request head and a response must each fit.
+ * Verified against the backend's real capacity when a server starts.
+ */
+export inline constexpr std::size_t max_request_bytes = 8192;
+export inline constexpr std::size_t max_response_bytes = 8192;
 
 export struct HttpServerConfig {
 	/** 0 requests a kernel-chosen ephemeral port. */
@@ -138,11 +158,16 @@ private:
  * Starts config.workers share-nothing workers (clamped to [1, 4]), each
  * owning its own io-context, racing accepts on one shared loopback
  * listener. On failure no server exists — nothing to clean up; the
- * NetError's stage and errno say what refused. Loopback-only by design:
- * not a public-interface listener.
+ * NetError's stage and errno say what refused, and is_transient()
+ * answers the retry question. After startup, a worker hit by a
+ * transient error keeps serving; one hit by a permanent error quiesces
+ * silently while the remaining workers serve on — stop() still joins
+ * every worker. Loopback-only by design: not a public-interface
+ * listener.
  */
 export template<RequestHandler F>
 [[nodiscard]] auto serve_http(HttpServerConfig config, F) -> std::expected<HttpServer, NetError> {
+	contract_assert(net_backend::buffer_capacity() == max_request_bytes);
 	auto stage = std::int32_t{0};
 	auto code = std::int32_t{0};
 	auto* impl = net_backend::server_start(

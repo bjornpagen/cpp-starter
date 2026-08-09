@@ -67,6 +67,22 @@ target_link_libraries(starter_http_tests
 
 add_test(NAME starter.http COMMAND starter_http_tests)
 
+# The executable errno-classification policy behind NetError::is_transient.
+add_executable(starter_net_tests)
+
+target_sources(starter_net_tests
+	PRIVATE
+		net.test.cc
+)
+
+target_link_libraries(starter_net_tests
+	PRIVATE
+		starter_module
+		starter_language_profile
+)
+
+add_test(NAME starter.net COMMAND starter_net_tests)
+
 # Boots the example on an ephemeral port, hits it with concurrent curls, and
 # requires a clean SIGINT shutdown; the generous timeout is a backstop only.
 add_test(NAME starter.httpd.smoke

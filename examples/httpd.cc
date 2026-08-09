@@ -6,13 +6,15 @@ namespace {
 constexpr auto text_plain = std::array{starter::HeaderView{.name = "Content-Type", .value = "text/plain"}};
 
 struct WorkerHandler {
+	static constexpr std::size_t max_body_bytes = 256;
+
 	[[nodiscard]] auto operator()(std::uint32_t worker, std::string_view request, std::span<char> out) const -> std::size_t {
 		auto const parsed = starter::parse_request(request);
 		if (!parsed) {
 			return starter::write_response(starter::ResponseHead{.status = 400, .reason = "Bad Request"}, text_plain, "bad request\n", out)
 			    .value_or(0);
 		}
-		auto body_buffer = std::array<char, 256>{};
+		auto body_buffer = std::array<char, max_body_bytes>{};
 		auto const body_span = std::span{body_buffer};
 		auto const formatted = std::format_to_n(body_span.begin(), std::ssize(body_span), "worker {} path {}\n", worker, parsed->target);
 		auto const body = std::string_view{body_span.begin(), formatted.out};
