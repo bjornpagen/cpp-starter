@@ -59,6 +59,19 @@ if(NOT STARTER_LINT_GRAPH)
 	# PIN(cmake-ld-link-order): the contracts runtime must land after every
 	# consumer's object files — see PINS.md
 	target_link_libraries(starter_language_profile INTERFACE stdc++exp)
+
+	target_compile_options(starter_language_profile INTERFACE
+		"$<$<CONFIG:Release>:-ffunction-sections;-fdata-sections>"
+	)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+		target_link_options(starter_language_profile INTERFACE
+			"$<$<CONFIG:Release>:LINKER:-dead_strip>"
+		)
+	else()
+		target_link_options(starter_language_profile INTERFACE
+			"$<$<CONFIG:Release>:LINKER:--gc-sections>"
+		)
+	endif()
 endif()
 
 target_compile_options(starter_language_profile INTERFACE
