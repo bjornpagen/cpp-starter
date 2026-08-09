@@ -9,8 +9,11 @@
   `inclhack-entry.def` shows just the new hack; `fixed-header.h` is the
   earlier production local fixinclude (full header replacement) — the
   upstream patch instead rewrites the guard, see below.
-- **Verified against trunk:** patch generated on and applies cleanly
-  (`git apply --check`) to master @ 0621cf67366 (2026-08-09). Trunk
+- **Verified against trunk (re-run 2026-08-09 on a clean, freshly
+  fetched clone):** `git am` applies clean, no fuzz, to master
+  @ 0621cf67366 (origin/master had not advanced past the generation
+  base). GCC's own server-side commit checker passes:
+  `contrib/gcc-changelog/git_check_commit.py HEAD` → `OK`. Trunk
   `fixincludes/inclhack.def` has no rsize_t/darwin-modules hack (grep
   `rsize` — no matches), so the fix is still needed.
 - **Verified behavior:** GCC 16.1.0 aarch64-apple-darwin24, macOS 15
@@ -36,9 +39,20 @@
   ```
 
 - Subject: `[PATCH] fixincludes: darwin sys/_types/_rsize_t.h breaks
-  under GCC -fmodules` (classifier + component, < 75 chars).
+  under GCC -fmodules` (classifier + component, < 75 chars). If the
+  companion Bugzilla PR is filed first, append ` [PRnnnnn]` (no
+  component, no space inside the brackets) and put the full
+  `PR other/nnnnn` form in the commit body so Bugzilla links the post.
 - The email must state testing done — use the "Testing done" section
-  below, including the autogen caveat.
+  below — and note lack of write access ("I do not have write access to
+  the GCC repository."), per contribute.html.
+- Send as plain text; the patch inline or as a `text/x-patch`
+  attachment, never application/* or base64. gcc-patches accepts
+  posts from unsubscribed addresses but runs them through spam
+  blocklists — subscribing first (or the `global-allow-subscribe`
+  mechanism) avoids a silent drop. The posting address becomes
+  permanently public: the archives are never edited.
+- No response after ~two weeks: one polite ping on the same thread.
 
 ## Title
 
@@ -93,14 +107,16 @@ fixincl.x hunk was written by hand to match the autogen template output
 exactly (verified by building fixincl from the patched tree and running
 the tests below); feel free to re-run ./genfixes when applying.
 
-## Testing done (state this in the email)
+## Testing done (state this in the email; re-verified 2026-08-09 on a clean trunk clone)
 
-- Trunk fixincludes builds standalone from the patched tree
-  (hand-regenerated fixincl.x compiles clean; FIX_COUNT/REGEX_COUNT
-  updated as the template computes them).
-- fixincludes self-test: autogen (needed by `make check` to generate
-  check.sh from check.tpl) is unavailable on this machine, so the exact
-  steps check.sh performs for the new fix were replicated manually
+- Applies clean with `git am` to master @ 0621cf67366; passes
+  `contrib/gcc-changelog/git_check_commit.py` (`OK`).
+- Trunk fixincludes builds standalone from the patched tree: fixincl.c,
+  which #includes the patched fixincl.x, compiles with the Makefile's
+  own `-W -Wall -Wwrite-strings ... -pedantic` with zero diagnostics
+  (FIX_COUNT/REGEX_COUNT updated as the template computes them).
+- fixincludes self-test: the exact steps `make check`'s generated
+  check.sh performs for the new fix were replicated manually
   (TEST_MODE=true, TARGET_MACHINE='*', test_text wrapped in
   `DARWIN_RSIZE_T_MODULES_CHECK`): fixincl output is byte-identical to
   the new `tests/base/sys/_types/_rsize_t.h` fixture.
@@ -117,3 +133,40 @@ the tests below); feel free to re-run ./genfixes when applying.
 - A full-header-replacement variant of this fix has been in production
   use on this host's GCC 16.1.0 toolchain since 2026-08-08 with the
   complete libstdc++ std module building and running.
+
+## Style gate (contrib/check_GNU_style.sh, run 2026-08-09)
+
+The script flags five classes of line in this patch; all are
+inapplicable, verified against the tree's own conventions — state this
+only if a reviewer asks:
+
+- spaces-not-tabs and macro-count lines in `fixincl.x`: generated-file
+  content matching autogen's template output, not hand-styled code;
+- `__has_feature(modules)` without the GNU space: verbatim SDK header
+  text and the `c_fix_arg`/`test_text` match strings, which must match
+  the real header byte-for-byte;
+- `#if defined( DARWIN_RSIZE_T_MODULES_CHECK )` in the test fixture:
+  the established `tests/base` wrapper convention (same form in
+  `assert.h`, `AvailabilityMacros.h`, `time.h`, ...).
+
+## Still to run before sending (contribute.html's testing bar)
+
+Policy: a change outside the front ends requires a complete build —
+"bootstrap all default languages, not just C and C++, and run all
+testsuites" — with results compared against pre-patch or gcc-testresults
+postings, and the email's testing statement must say so. Two steps
+remain, both in motion:
+
+1. **Full bootstrap of the patched trunk** (default languages, darwin
+   arm64) — running in `~/Documents/gcc-verify-build` (branch
+   `verify-rsize-t` = trunk + exactly this patch). When it finishes:
+   `make -k check` (requires DejaGnu), compare against current
+   aarch64-apple-darwin gcc-testresults postings, then replace this
+   section with one line: "Bootstrapped and regression-tested on
+   aarch64-apple-darwin24 (all default languages); test results compared
+   against <baseline>."
+2. **`./genfixes` regeneration** (requires autogen): regenerate
+   fixincl.x from the patched inclhack.def, diff against the
+   hand-written hunk. If identical, delete the "Note on fixincl.x"
+   caveat paragraph from the body; if it differs, take the regenerated
+   version into the patch and re-run the self-test.

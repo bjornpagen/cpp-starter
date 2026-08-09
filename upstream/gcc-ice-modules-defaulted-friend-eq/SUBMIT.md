@@ -49,8 +49,8 @@ int main() {
 ```
 
 ```
-$ g++ -std=c++26 -fmodules -c a.cc      # OK, exit 0
-$ g++ -std=c++26 -fmodules -c b.cc
+$ g++-16 -std=c++26 -fmodules -c a.cc      # OK, exit 0
+$ g++-16 -std=c++26 -fmodules -c b.cc
 In module A, imported at b.cc:1:
 a.cc:5:31: internal compiler error: Segmentation fault: 11
     5 |         friend constexpr bool operator==(Mask const&, Mask const&) = default;

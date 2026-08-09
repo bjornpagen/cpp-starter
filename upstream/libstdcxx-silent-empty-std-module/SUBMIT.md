@@ -70,6 +70,34 @@ Apple Silicon (Homebrew/homebrew-core#289142): 1-byte module sources
 referenced by the installed `libstdc++.modules.json`, closed there as
 needing an upstream report.
 
+How to reproduce (aarch64-apple-darwin24, macOS 15 SDK):
+
+1. Build GCC 16.1.0 from release sources on darwin, where the std module
+   compile fails for an unrelated SDK-header reason (fixincludes patch
+   posted separately; any platform where `std.cc` fails to compile
+   reproduces the fallback the same way — PR 125460's -ffreestanding
+   failure is another trigger):
+   `../gcc-16.1.0/configure --prefix=$PREFIX --enable-languages=c,c++
+   --disable-nls --enable-checking=release --program-suffix=-16
+   --with-system-zlib --build=aarch64-apple-darwin24
+   --with-sysroot=<Xcode MacOSX.sdk>` then `make && make install`.
+2. The libstdc++ build prints "Cannot compile std module" twice to
+   stderr, mid-scroll in the parallel log, and completes with exit 0.
+3. `wc -c $PREFIX/.../c++/16.1.0/bits/std.cc` → 1 byte, and it is
+   referenced by the installed `libstdc++.modules.json`; compiling it
+   per the manifest (`g++-16 -std=c++26 -fmodules -fsearch-include-path
+   bits/std.cc`) produces no usable std module.
+
+Environment of the affected build:
+- g++-16 (GCC) 16.1.0
+- Build/host/target: aarch64-apple-darwin24 (native)
+- Configured with: ../gcc-16.1.0/configure --prefix=$HOME/.gcc/versions/16.1.0
+  --enable-languages=c,c++ --disable-nls --enable-checking=release
+  --program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
+  --with-sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+- Bugzilla Version field: 16.1.0 (Makefile.am line numbers cited above are
+  trunk's @ 0621cf67366, re-verified 2026-08-09).
+
 Requested behavior — any of:
 
 1. failing the build loudly when the std module does not compile (best), or

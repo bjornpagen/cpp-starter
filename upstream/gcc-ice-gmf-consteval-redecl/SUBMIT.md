@@ -37,7 +37,7 @@ export module m;
 ```
 
 ```
-$ g++ -std=c++26 -fmodules -c repro.cc
+$ g++-16 -std=c++26 -fmodules -c repro.cc
 repro.cc:2:1: warning: global module fragment contents must be from preprocessor inclusion [-Wglobal-module]
     2 | extern int const q;
       | ^~~~~~
@@ -70,7 +70,7 @@ export module m;
 ```
 
 ```
-$ g++ -std=c++26 -fmodules -c repro-include.cc
+$ g++-16 -std=c++26 -fmodules -c repro-include.cc
 In file included from repro-include.cc:2:
 q.h:2:22: internal compiler error: Segmentation fault: 11
 ```

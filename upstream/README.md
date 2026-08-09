@@ -2,110 +2,155 @@
 
 Everything this project sends to the GCC project, one directory per item:
 verified repros, the fixincludes patch, and paste-ready `SUBMIT.md` text.
-All claims re-verified against the pinned toolchain (g++-16 = GCC 16.1.0,
-aarch64-apple-darwin24) and validated against trunk @ `0621cf67366`
-(2026-08-09). NVIDIA/stdexec material does NOT live here: those fixes are
-commits on the maintained fork (github.com/bjornpagen/stdexec — branches
-`fix/arm64-duplicate-inline`, `fix/sync-wait-no-exceptions`; PR briefs in
-the fork's `FORK.md`).
+NVIDIA/stdexec material does NOT live here: those fixes are commits on the
+maintained fork (github.com/bjornpagen/stdexec — PRs #2167/#2168 open,
+awaiting maintainer ok-to-test).
 
-| Item | Kind | Target | Status | Summary |
-|---|---|---|---|---|
-| `gcc-fixincludes-darwin-rsize-t` | patch (`0001-…rsize_t….patch`, format-patch + DCO) | gcc-patches mailing list (+ Bugzilla PR first) | **SEND** — applies clean to trunk; no existing hack; fixincl self-test replicated (autogen caveat disclosed in the email text) | SDK `_rsize_t.h` assumes `__has_feature(modules)` ⇒ clang stddef protocol; `rsize_t` never defines under GCC `-fmodules`, breaking the libstdc++ std module on darwin |
-| `gcc-ice-modules-defaulted-friend-eq` | bug report | Bugzilla, Component `c++`, keyword ice-on-valid-code | **SEND** — 2-file repro re-verified; dupe search clean (PR 122822 is see-also, not dup) | Importer ICEs (segfault) using an imported class with a defaulted hidden-friend `operator==` |
-| `gcc-ice-gmf-consteval-redecl` | bug report | Bugzilla, Component `c++`, keyword ice-on-valid-code | **SEND** — 4-line repro (no consteval needed; directory name is historical); triage matrix verified; dupe search clean | GMF variable declared `extern`, then defined `inline`, segfaults cc1plus; blocks stdexec in any GMF |
-| `libstdcxx-silent-empty-std-module` | bug report | Bugzilla, Component `libstdc++` | **SEND** — fallback confirmed on trunk (line numbers cited are trunk's); corroboration: Homebrew/homebrew-core#289142 | Failed std-module compile installs a 1-byte `bits/std.cc` plus its `modules.json` entry with exit 0 |
-| `gcc-modules-partition-bmi-expected` | bug report | Bugzilla, Component `c++` (modules) | **not yet filed — no action needed** (no standalone repro; attempts + reduction plan in NOTES.md; related: PR 125595, 125144, 125356) | Non-template member body instantiating `std::expected` corrupts partition BMI for re-export ("Bad file data") |
+| Item | Kind | Target | Status |
+|---|---|---|---|
+| `gcc-fixincludes-darwin-rsize-t` | patch (format-patch + DCO) | Bugzilla PR first, then gcc-patches@ | **SEND after gates 1, 3, 4** |
+| `gcc-ice-modules-defaulted-friend-eq` | bug report (2-file repro) | Bugzilla, `c++`, ice-on-valid-code | **SEND after gate 2** |
+| `gcc-ice-gmf-consteval-redecl` | bug report (4-line repro) | Bugzilla, `c++`, ice-on-valid-code | **SEND after gate 2** |
+| `libstdcxx-silent-empty-std-module` | bug report (build behavior) | Bugzilla, `libstdc++` | **SEND last** (cites the posted fixincludes PR) |
 
-Comment on existing upstream reports instead (no directories needed): CC +
-comment on GCC **PR 124197** with our `template for`/`-Wshadow` evidence
-(fires once per element; 16.1.0 + reflection variant), and on GCC
-**PR 71962** with the reflection-era impact of UBSan refusing to
-constant-fold `std::string(ptr, size)` over vague-linkage storage.
+Comment-only drops (no directories): CC + comment on **PR 124197** with
+our `template for`/`-Wshadow` evidence (16.1.0 confirmation, reflection
+variant, fires once per element), and on **PR 71962** with the
+reflection-era impact of UBSan (`null`/`nonnull-attribute`) refusing to
+constant-fold `std::string(ptr, size)` over vague-linkage storage — note
+a candidate patch was attached upstream 2026-08-05.
 
-## Suggested submission order
+Not filed, deliberately: the partition-BMI `std::expected` corruption has
+no standalone repro; its reduction ledger lives with its workaround pin in
+the bumbledb repo (`cpp/PINS.md`, entry `gcc-partition-bmi-expected`).
+Checked and conforming, never file: `^^` on using-declarations (P2996R13)
+and `inplace_vector::try_push_back` returning `optional<T&>` (P3981R2).
 
-1. `gcc-fixincludes-darwin-rsize-t` — mechanical, self-contained, tested.
-2. `gcc-ice-modules-defaulted-friend-eq` — small segfault repro on valid code.
-3. `gcc-ice-gmf-consteval-redecl` — 4-line segfault, full triage matrix.
-4. `libstdcxx-silent-empty-std-module` — asks maintainers to change a
-   deliberate fallback, mildly discussion-prone; send after (1) so it can
-   link the posted fixincludes patch it references.
+## Verified state (2026-08-09, everything re-run cold)
 
-## How to send these (from gcc.gnu.org/bugs/ and /contribute.html)
+- Patch applies clean with `git am` to trunk master @ 0621cf67366 on a
+  freshly reset clone (origin had not advanced past the generation base).
+- Passes GCC's own server-side commit gate:
+  `contrib/gcc-changelog/git_check_commit.py` → `OK`.
+- `contrib/check_GNU_style.sh` flags are all documented-inapplicable
+  (generated `fixincl.x`, verbatim SDK match text, `tests/base` wrapper
+  convention) — preemption recorded in the SUBMIT.
+- fixincludes builds standalone from the patched tree; the self-test
+  replication reproduces the fixture **byte-identically**.
+- Both ICE repros re-verified cold on the local 16.1.0: outputs match the
+  SUBMIT transcripts verbatim (commands quoted as `g++-16`, the literal
+  driver).
+- libstdc++ report's cited `Makefile.am` line numbers are exact on
+  today's trunk; no drift.
+- Per-item duplicate searches recorded in each SUBMIT with dates; policy
+  compliance audited against the live contribute.html / bugs pages
+  2026-08-09.
 
-### Bug reports → GCC Bugzilla
+## The provenance constraint (read before sending anything)
 
-1. **Account**: create one at https://gcc.gnu.org/bugzilla/ — a valid
-   email address is required (anti-spam policy, stated on the bugs page).
-2. **Before filing**, the bugs page asks that you check the well-known
-   bugs list and, if possible, a current snapshot. Done for every SEND
-   item here: each `SUBMIT.md` records the dupe searches and the trunk
-   check date — mention both in the report.
-3. **What they need** (all in each `SUBMIT.md` already): the exact GCC
-   version, system type, and configure options (all three come from
-   `g++-16 -v` — paste its output verbatim); the complete command line;
-   the complete compiler output; and the testcase. The preprocessed-file
-   requirement is waived for exactly our case — their stated excuse (ii):
-   "if you've reduced the testcase to a small file that doesn't include
-   any other file." Every SEND repro here is such a file.
-4. **Formatting**: paste version/command/output as plain text in the
-   report body — never only inside an attachment. No archives. The
-   modules ICEs legitimately need two source files (an exporter and an
-   importer); that is the sanctioned multiple-source-files exception —
-   attach both files individually, still quoting everything essential in
-   the body.
-5. **Fields**: Product `gcc`; Component per the table above; Version
-   `16.1.0`; add host/target `aarch64-apple-darwin24` in the body (and
-   the ICE keyword where the table says so).
-6. **After filing**: expect triage to confirm/reduce; respond with the
-   NOTES.md material if a maintainer asks for variants — the triage
-   matrices in the SUBMIT files anticipate the common questions.
+Upstream trunk has **no `aarch64-*-darwin*` target** in `gcc/config.gcc`
+— the Apple-Silicon port is out of tree, and this machine's 16.1.0 was
+built from the FSF release tarball **plus the darwin-arm64 port series**
+(`~/.gcc/build/gcc-16.1.0.diff`). The bugs policy excludes "unofficial
+releases or snapshots not issued by the GCC project," so the two ICE
+reports must lead with reproduction on an **official FSF build**, citing
+darwin as corroborating context with the port named. The module ICEs are
+front-end streaming bugs, expected target-independent; gate 2 produces
+that evidence. The fixincludes patch is unaffected in substance
+(`x86_64-*-darwin*` is an upstream target and hits the same SDK header),
+but its bootstrap evidence also comes from Linux (gate 3), since a native
+darwin trunk bootstrap is impossible by construction.
 
-### The fixincludes patch → gcc-patches mailing list
+## Gates (machine work, in flight — each gate updates its SUBMIT and then
+## deletes itself from this list)
 
-1. **Legal**: covered by the DCO route — contribute.html allows
-   certifying the Developer Certificate of Origin with a
-   `Signed-off-by:` tag instead of an FSF copyright assignment; the
-   prepared commit in `0001-…rsize_t….patch` already carries it (small
-   fixes may not strictly need either, but the tag costs nothing).
-2. **File the Bugzilla PR first** (item 1 of the order above can carry
-   both hats: report + patch), then email the patch to
-   `gcc-patches@gcc.gnu.org` referencing the PR number in the subject,
-   e.g. `[PATCH] fixincludes: darwin: define rsize_t under GCC modules
-   (PR nnnnn)`.
-3. **Format**: send the `git format-patch` output inline or as an
-   attachment; the ChangeLog entry lives in the commit message per
-   current convention (the prepared patch follows recent fixincludes
-   commits' style); include the testing statement (what was run, on what
-   target — ours discloses the autogen caveat and invites the maintainer
-   to re-run `./genfixes`).
-4. **The patch branch** also lives at github.com/bjornpagen/gcc, branch
-   `fixincludes-darwin-rsize-t`, for your own reference — GCC does not
-   take GitHub PRs; the mailing list is the submission channel.
-5. **Ping cadence**: if there is no response, a polite ping on the same
-   thread after a week or two is the accepted practice.
+1. **genfixes regeneration** (needs `sudo port install autogen`):
+   regenerate `fixincl.x` from the patched `inclhack.def`, diff against
+   the hand-written hunk; if identical, delete the "Note on fixincl.x"
+   caveat from the SUBMIT body; if not, take the regenerated version and
+   re-run the self-test.
+2. **Vanilla ICE evidence** (CI, branch `upstream-verify`): official
+   `gcc:16.1.0` images (amd64 + arm64) run both repros — paste the
+   verbatim ICE outputs and platforms into the two ICE SUBMITs; the
+   trunk-quick job adds a "still reproduces on trunk @ <sha>" line (or a
+   fixed-on-trunk verdict, which would change the reports to regression
+   notes against 16.1).
+3. **Bootstrap + regtest** (CI): full default-language bootstrap of the
+   patched trunk plus `make -k check` on aarch64-linux-gnu, summary
+   artifact kept — becomes the one-line testing statement in the
+   fixincludes SUBMIT. The same job runs the real fixincludes
+   `make check` (autogen available there).
+4. **Final read-through** of each SUBMIT after gates land: no pending
+   sections may remain when sending.
 
-## Checked, conforming, not filed
+## The send procedure (in order; do not reorder)
 
-- **`^^` on names introduced by using-declarations** (`^^std::uint64_t`
-  → "cannot be applied to a using-declaration"): P2996R13 makes
-  reflect-expressions ill-formed on using-declarators — GCC is
-  conforming. Verified workarounds recorded in the in-tree pins:
-  `^^::uint64_t`, a local alias, or resolution through a template
-  parameter.
-- **`inplace_vector::try_push_back` returning `optional<T&>`**: P3981R2
-  (adopted March 2026) — libstdc++ tracks the working draft; our
-  P0843R14-era comments were corrected instead.
+**Step 0 — Bugzilla account (start now; 24h lead time).**
+Try https://gcc.gnu.org/bugzilla/createaccount.cgi. The live page says:
+"Because of spam, account creation through this form is restricted. If
+creating an account fails, contact gcc-bugzilla-account-request@gcc.gnu.org
+to request a GCC Bugzilla account. You should receive a response within
+24 hours." If the form refuses bjorn.pagen@alpha.school, send that email.
 
-## Not upstream material
+**Step 0b — mailing-list prep (optional but recommended).**
+Posting to gcc-patches@gcc.gnu.org works without subscribing, but
+unsubscribed senders go through spam blocklists; subscribing first avoids
+a silent drop. Plain-text mail only (no HTML). Lists cap messages at
+400kB on gcc-patches (ours is 6.5kB). The posting address becomes
+permanently public — archives are never edited.
 
-- The `db_impl.cc` implementation-unit split (bumbledb) works around
-  `gcc-modules-partition-bmi-expected` (not yet filed, above); the
-  scoped `-Wno-shadow` works around PR 124197; the iterator-pair
-  `std::string` construction works around PR 71962. Each gets deleted
-  when its upstream fix lands.
-- stdexec fixes live on the maintained fork
-  (github.com/bjornpagen/stdexec, pinned by the top-level CMakeLists):
-  every fork commit has a pending upstream PR (briefs in FORK.md), and
-  the fork's success condition is its own emptiness.
+**Step 1 — file the fixincludes Bugzilla PR.**
+Product `gcc`, Component `other` (no dedicated fixincludes component;
+triagers reassign freely), Version `16.1.0`. Title and body: the SUBMIT's
+Title/Body sections. Note the assigned number — call it PRnnnnn.
+
+**Step 2 — email the patch to gcc-patches@gcc.gnu.org.**
+- Subject WITHOUT a PR: `[PATCH] fixincludes: darwin
+  sys/_types/_rsize_t.h breaks under GCC -fmodules` (69 chars after the
+  classifier — at the 75 limit).
+- Subject WITH the PR from step 1 — **the long form busts the 75-char
+  limit**, use the short summary instead:
+  `[PATCH] fixincludes: define rsize_t under GCC -fmodules on darwin [PRnnnnn]`
+  and put the full `PR other/nnnnn` in the commit body so Bugzilla links
+  the post.
+- Attach `0001-…rsize_t….patch` as `text/x-patch` (or send with
+  `git send-email`); never paste the diff into a wrapping mail client.
+- Body: the SUBMIT's Body + "Testing done" sections, plus: "I do not
+  have write access to the GCC repository."
+- No response after ~two weeks: one polite ping on the same thread with
+  a brief summary and the archive URL of the original post.
+
+**Step 3 — file the defaulted-friend-`operator==` ICE.**
+Product `gcc`, Component `c++`, Version `16.1.0`, keyword
+`ice-on-valid-code`, summary from the SUBMIT Title (`[modules]` prefix
+included). Paste the Body; attach `a.cc` and `b.cc` **individually** (the
+sanctioned multi-file exception — never an archive); add "See Also"
+PR 122822; the dupe-search list and trunk status are already in the body.
+
+**Step 4 — file the GMF redeclaration ICE.**
+Same fields. Paste the Body; attach `repro.cc` (and optionally `q.h` +
+`repro-include.cc` as the no-warning variant). The directory name
+(`consteval-redecl`) is historical; the report text is the truth.
+
+**Step 5 — file the libstdc++ silent-fallback report, last.**
+Product `gcc`, Component `libstdc++`, Version `16.1.0`. Paste the Body;
+cite the fixincludes PR number from step 1 and the gcc-patches archive
+URL from step 2; cite Homebrew/homebrew-core#289142 as shipped-to-users
+corroboration. Expect discussion — it asks maintainers to change a
+deliberate fallback; the three-option remediation ladder in the body is
+the negotiating position.
+
+**Step 6 — comment drops.**
+On PR 124197: confirmed on GCC 16.1.0; fires once per expanded element
+(not N−1); also triggers via reflection/`consteval` expansion; CC
+yourself. On PR 71962: reflection-era impact — UBSan refuses
+constant-folding of `std::string(ptr, size)` over vague-linkage storage,
+which breaks consteval string machinery under `-fsanitize=undefined`;
+the iterator-pair construction works around it; note interest in the
+2026-08-05 candidate patch.
+
+**Step 7 — after the dust settles.**
+Answer triage with the variant matrices already in the SUBMITs. When a
+fix lands upstream for any item, its in-tree workaround pin (PINS.md,
+both repos) has a tombstone pointing back here — delete workaround and
+pin together.
