@@ -105,6 +105,17 @@ for clang. tests/base fixture included; fixincl.x regenerated.
 fixincl.x regenerated with ./genfixes (AutoGen 5.18.16); tests/base
 fixture included.
 
+Alternatives considered, for the record: (1) teaching GCC's stddef.h to
+honor the clang-extension __need_rsize_t protocol member would fix the
+class rather than the instance (any header speaking that protocol, on
+any target), at the cost of tracking a Clang stddef extension in a
+public GCC header on every target and re-opening the Annex K question —
+if maintainers prefer that direction I am happy to help; the fixincludes
+hack fixes today's SDKs either way, since deployed SDKs never change.
+(2) The root cause is the SDK guard using __has_feature(modules) as a
+proxy for "is clang"; that is Apple's to fix, but a fixed future SDK
+does not help any SDK already shipped.
+
 ## Testing done (state this in the email; re-verified 2026-08-09 on a clean trunk clone)
 
 - Applies clean with `git am` to master @ 0621cf67366; passes
