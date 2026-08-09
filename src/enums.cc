@@ -4,8 +4,6 @@ import std;
 
 namespace starter {
 
-// Reflection-derived enumerator name: the enum declaration is the single
-// source of truth (AGENTS.md §17); no parallel string table exists.
 export template<class E>
     requires std::is_enum_v<E>
 [[nodiscard]] auto enum_name(E value) -> std::optional<std::string_view> {
@@ -17,4 +15,4 @@ export template<class E>
 	return std::nullopt;
 }
 
-} // namespace starter
+}

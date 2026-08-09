@@ -1,13 +1,3 @@
-// httpd — thread-per-core share-nothing HTTP/1.1 example over the exported
-// :net and :http surfaces. N workers (hardware concurrency, capped at 4),
-// each owning its OWN kqueue io-context, racing accepts on one shared
-// loopback listener; per connection: accept -> read -> parse -> respond 200
-// text/plain with the worker id and request path -> close. Zero cross-worker
-// state: the handler is structurally stateless (RequestHandler concept) and
-// each response is a pure function of (worker id, request bytes).
-//
-// The server binds an ephemeral port (config.port = 0) and prints the
-// resolved port on stdout; SIGINT/SIGTERM shuts it down cleanly.
 import std;
 import starter;
 
@@ -16,13 +6,15 @@ namespace {
 constexpr auto text_plain = std::array{starter::HeaderView{.name = "Content-Type", .value = "text/plain"}};
 
 struct WorkerHandler {
+	static constexpr std::size_t max_body_bytes = 256;
+
 	[[nodiscard]] auto operator()(std::uint32_t worker, std::string_view request, std::span<char> out) const -> std::size_t {
 		auto const parsed = starter::parse_request(request);
 		if (!parsed) {
 			return starter::write_response(starter::ResponseHead{.status = 400, .reason = "Bad Request"}, text_plain, "bad request\n", out)
 			    .value_or(0);
 		}
-		auto body_buffer = std::array<char, 256>{};
+		auto body_buffer = std::array<char, max_body_bytes>{};
 		auto const body_span = std::span{body_buffer};
 		auto const formatted = std::format_to_n(body_span.begin(), std::ssize(body_span), "worker {} path {}\n", worker, parsed->target);
 		auto const body = std::string_view{body_span.begin(), formatted.out};
@@ -30,7 +22,7 @@ struct WorkerHandler {
 	}
 };
 
-} // namespace
+}
 
 auto main() -> int {
 	auto const workers = std::min(starter::hardware_workers(), std::uint32_t{4});

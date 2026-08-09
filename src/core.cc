@@ -15,4 +15,4 @@ export [[nodiscard]] auto greeting(std::string_view name) -> std::expected<std::
 	return std::format("hello, {}", name);
 }
 
-} // namespace starter
+}

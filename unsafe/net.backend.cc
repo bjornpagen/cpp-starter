@@ -1,35 +1,4 @@
-// net.backend.cc — the I/O half of the sender/receiver swap boundary: the
-// kqueue-backed io-context whose senders complete on readiness. Together
-// with foreign/exec.backend.cc this is the entire stdexec spelling surface
-// of the repository; when the pinned toolchain ships __cpp_lib_senders (see
-// the tombstone in tests/conformance.test.cc) the sender vocabulary below
-// re-binds to std::execution and everything upward is untouched.
-//
-// Why a plain (non-module) TU: GCC 16.1 ICEs whenever a stdexec header is
-// textually included in ANY module unit (global-module-fragment CPO pattern,
-// pinned in foreign/exec.backend.cc), so senders cannot cross the module
-// boundary on this toolchain. The :net partition (unsafe/net.cc) reaches
-// this machinery through the same extern "C++" narrow ABI the :exec
-// partition uses, and what crosses is concrete: an opaque Server handle
-// plus scalar-and-fn-pointer entry points.
-//
-// Concurrency model: thread-per-core share-nothing. Each worker owns its
-// OWN kqueue reactor (Ctx); the ONE shared nonblocking listener is armed in
-// every worker's kqueue and the workers race accept(2) — a lost race is just
-// EAGAIN, which re-arms (the pattern AcceptOp already implements). Per-worker
-// SO_REUSEPORT listeners are deliberately NOT used: Darwin has no
-// SO_REUSEPORT load balancing for TCP (that is Linux behavior, FreeBSD's is
-// the separate SO_REUSEPORT_LB) — it delivers every connection to the
-// last-bound socket, verified empirically on this host (all requests landed
-// on the last worker). A worker's connection chain is a straight-line sender
-// composition —
-//
-//   async_accept | let_value( async_read | let_value( handler; async_write ))
-//
-// — restarted after every completion. No state is shared between workers;
-// the only cross-thread entries are Ctx::request_stop (a kevent NOTE_TRIGGER
-// on the worker's kqueue, thread-safe by the kevent contract) and the
-// stop/join latch. No lock is visible above this TU.
+/* PIN(gcc-gmf-stdexec-ice): plain TU — with foreign/exec.backend.cc, the repository's entire stdexec spelling surface; see PINS.md */
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -55,9 +24,6 @@
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
 
-// The vocabulary namespace, mirroring foreign/exec.backend.cc: this TU
-// composes with exactly these combinators; the eventual swap re-points them
-// at std::execution.
 namespace ex {
 
 using stdexec::just;
@@ -67,21 +33,45 @@ using stdexec::then;
 
 using exec::static_thread_pool;
 
-} // namespace ex
+}
 
 namespace starter::net_backend {
 
 using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity);
 
+[[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool {
+	switch (code) {
+	case EINTR:
+	case EAGAIN:
+#if EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+	case ECONNRESET:
+	case ECONNABORTED:
+	case EPIPE:
+	case ETIMEDOUT:
+	case ENETRESET:
+	case EMFILE:
+	case ENFILE:
+	case ENOBUFS:
+	case ENOMEM:
+		return true;
+	default:
+		return false;
+	}
+}
+
 namespace {
 
 inline constexpr std::uint32_t max_workers = 4;
-inline constexpr std::size_t buffer_capacity = 8192;
+inline constexpr std::size_t buffer_bytes = 8192;
 inline constexpr int listen_backlog = 256;
 inline constexpr std::uintptr_t stop_ident = 1;
 
-// Failure stages, mirrored by starter::NetStage in unsafe/net.cc — the two
-// lists must stay in sync (narrow scalar ABI).
+/**
+ * Mirrored by starter::NetStage in unsafe/net.cc (narrow scalar ABI;
+ * keep in sync).
+ */
 inline constexpr std::int32_t stage_socket = 1;
 inline constexpr std::int32_t stage_option = 2;
 inline constexpr std::int32_t stage_bind = 3;
@@ -93,17 +83,15 @@ inline constexpr std::int32_t stage_accept = 8;
 inline constexpr std::int32_t stage_read = 9;
 inline constexpr std::int32_t stage_write = 10;
 
-// The typed error of every I/O sender below: which syscall stage failed and
-// its errno. Flows through the sender error channel as a value, never as an
-// exception_ptr (AGENTS.md §11).
 struct NetErr {
 	std::int32_t stage;
 	std::int32_t code;
 };
 
-// EV_SET is a field-assignment macro whose implicit int conversions trip
-// -Wconversion at the expansion site; this helper is the same thing with the
-// conversions spelled.
+/**
+ * EV_SET spelled as a function: the macro's implicit int conversions
+ * trip -Wconversion at the expansion site.
+ */
 [[nodiscard]] auto make_event(std::uintptr_t ident, std::int16_t filter, std::uint16_t flags, std::uint32_t fflags, void* udata) noexcept
     -> struct ::kevent {
 	struct ::kevent ev{};
@@ -126,19 +114,18 @@ set_nonblocking(int fd) noexcept -> std::int32_t {
 	return 0;
 }
 
-// The readiness continuation a suspended operation parks in the reactor.
-// SAFETY: `self` is the operation state, whose address is stable from
-// connect until completion; the reactor invokes `fn` at most once, on the
-// worker's own thread, either on kevent delivery or on cancellation.
+/* SAFETY: self is the operation state, address-stable from connect until completion; the reactor invokes fn at most once, on the worker's own thread */
 struct Waiter {
 	void (*fn)(void* self, bool canceled);
 	void* self;
 };
 
-// One worker's kqueue reactor. Single-threaded by construction: everything
-// except request_stop happens on the owning worker thread, and a worker's
-// straight-line connection chain suspends on at most one fd at a time, so a
-// single armed-waiter slot is the whole scheduler state.
+/**
+ * One worker's kqueue reactor, single-threaded by construction: only
+ * request_stop crosses threads. A worker's straight-line connection
+ * chain suspends on at most one fd at a time, so a single armed-waiter
+ * slot is the whole scheduler state.
+ */
 class Ctx {
 public:
 	Ctx() = default;
@@ -165,9 +152,11 @@ public:
 		return 0;
 	}
 
-	// Parks `waiter` until `fd` is ready for `filter` (oneshot: the kernel
-	// deletes the event on delivery, so normal operation leaves no stale
-	// registrations behind).
+	/**
+	 * Parks `waiter` until `fd` is ready for `filter`. Oneshot: the
+	 * kernel deletes the event on delivery, so normal operation leaves
+	 * no stale registrations behind.
+	 */
 	[[nodiscard]] auto arm(int fd, std::int16_t filter, Waiter* waiter) noexcept -> std::int32_t {
 		auto ev = make_event(static_cast<std::uintptr_t>(fd), filter, EV_ADD | EV_ONESHOT, 0, waiter);
 		if (::kevent(kq_, &ev, 1, nullptr, 0, nullptr) < 0) {
@@ -177,22 +166,25 @@ public:
 		return 0;
 	}
 
-	// Blocks for one kevent batch and dispatches it. The stop event only
-	// flips `stopping`; the run loop in run_worker owns the consequences.
+	/** The stop event only flips `stopping`; run_worker owns the consequences. */
 	auto run_one() noexcept -> void {
 		dispatch(nullptr);
 	}
 
-	// Non-blocking dispatch: lets a worker that keeps completing chains
-	// synchronously (a saturated accept queue) still observe a pending stop.
+	/**
+	 * Non-blocking dispatch: a worker whose chains keep completing
+	 * synchronously still observes a pending stop.
+	 */
 	auto poll() noexcept -> void {
 		auto const zero = ::timespec{.tv_sec = 0, .tv_nsec = 0};
 		dispatch(&zero);
 	}
 
-	// Completes the suspended operation through its stopped channel so the
-	// operation state is quiescent before it is destroyed (destroying a
-	// started-but-uncompleted operation state is undefined in sender-land).
+	/**
+	 * Completes the suspended operation through its stopped channel:
+	 * destroying a started-but-uncompleted operation state is undefined
+	 * in sender-land.
+	 */
 	auto cancel_armed() noexcept -> void {
 		if (armed_ == nullptr) {
 			return;
@@ -205,9 +197,7 @@ public:
 		return armed_ != nullptr;
 	}
 
-	// SAFETY: the one cross-thread entry point. kevent(2) on a shared kqueue
-	// descriptor is thread-safe; NOTE_TRIGGER wakes the owning worker, which
-	// does all actual stopping on its own thread.
+	/* SAFETY: the one cross-thread entry — kevent(2) on a shared kqueue fd is thread-safe; NOTE_TRIGGER wakes the owning worker, which stops on its own thread */
 	auto request_stop() noexcept -> void {
 		auto ev = make_event(stop_ident, EVFILT_USER, 0, NOTE_TRIGGER, nullptr);
 		static_cast<void>(::kevent(kq_, &ev, 1, nullptr, 0, nullptr));
@@ -221,7 +211,7 @@ private:
 		auto const count = ::kevent(kq_, nullptr, 0, events.data(), static_cast<int>(events.size()), timeout);
 		if (count < 0) {
 			if (errno != EINTR) {
-				stopping = true; // the reactor itself is broken: quiesce
+				stopping = true;
 			}
 			return;
 		}
@@ -232,7 +222,7 @@ private:
 			}
 			auto* waiter = static_cast<Waiter*>(ev.udata);
 			if (waiter == nullptr || waiter != armed_) {
-				continue; // stale oneshot from an already-canceled operation
+				continue;
 			}
 			armed_ = nullptr;
 			waiter->fn(waiter->self, false);
@@ -243,9 +233,10 @@ private:
 	Waiter* armed_ = nullptr;
 };
 
-// An accepted connection: the fd plus its request/response buffers. Owned by
-// the connection chain (it lives in let_value's operation state), closed by
-// RAII when the chain's operation state is destroyed.
+/**
+ * An accepted connection: lives in let_value's operation state and is
+ * closed by RAII when that state is destroyed.
+ */
 class Conn {
 public:
 	Conn() = default;
@@ -275,8 +266,8 @@ public:
 		return fd_;
 	}
 
-	std::array<char, buffer_capacity> in{};
-	std::array<char, buffer_capacity> out{};
+	std::array<char, buffer_bytes> in{};
+	std::array<char, buffer_bytes> out{};
 
 private:
 	auto close_fd() noexcept -> void {
@@ -287,8 +278,6 @@ private:
 
 	int fd_ = -1;
 };
-
-// --- async_accept(Ctx&, listener) -> sender of Conn ------------------------
 
 template<class Rcvr>
 struct AcceptOp {
@@ -358,14 +347,12 @@ struct AcceptSender {
 	return {&ctx, listener_fd};
 }
 
-// --- async_read(Ctx&, fd, span) -> sender of size ---------------------------
-
-// Some: complete after the first successful read (the generic form).
-// HttpHead: keep reading until the request head terminator (CRLF CRLF) has
-// arrived, the buffer is full, or the peer half-closed — the server's torn-
-// buffer loop, folded into the operation so no dynamic sender recursion is
-// needed. Either way the completion value is the total byte count (0 = EOF
-// before any data).
+/**
+ * Some: complete after the first successful read. HttpHead: read until
+ * the request head terminator (CRLF CRLF), a full buffer, or peer
+ * half-close. Either way the completion value is the total byte count;
+ * 0 is EOF before any data.
+ */
 enum class ReadUntil : std::uint8_t {
 	Some,
 	HttpHead,
@@ -401,7 +388,7 @@ struct ReadOp {
 				continue;
 			}
 			if (count == 0) {
-				stdexec::set_value(std::move(rcvr), received); // EOF
+				stdexec::set_value(std::move(rcvr), received);
 				return;
 			}
 			if (errno == EINTR) {
@@ -453,10 +440,7 @@ struct ReadSender {
 	return {&ctx, fd, buffer, until};
 }
 
-// --- async_write(Ctx&, fd, span) -> sender of size ---------------------------
-
-// Writes the whole span (partial writes and EAGAIN are folded into the
-// operation), completing with the total byte count.
+/** Writes the whole span; partial writes and EAGAIN fold into the operation. */
 template<class Rcvr>
 struct WriteOp {
 	Rcvr rcvr;
@@ -525,8 +509,6 @@ struct WriteSender {
 	return {&ctx, fd, data};
 }
 
-// --- the worker: one reactor, the shared listener, one restarting chain ----
-
 struct WorkerCore {
 	Ctx ctx;
 	int lfd = -1;
@@ -536,11 +518,11 @@ struct WorkerCore {
 	bool finished = false;
 };
 
-// One full connection: accept -> read the request head -> run the handler
-// into the response buffer -> write the response -> close (Conn RAII, when
-// the chain's operation state is destroyed on restart). The handler runs on
-// this worker's thread; `c` lives in let_value's operation state, which
-// outlives every inner sender borrowing it.
+/**
+ * One full connection: the handler runs on this worker's thread, and
+ * `c` lives in let_value's operation state, which outlives every inner
+ * sender borrowing it.
+ */
 auto make_chain(WorkerCore& w) {
 	return async_accept(w.ctx, w.lfd) | ex::let_value([&w](Conn& c) {
 		       return async_read(w.ctx, c.fd(), std::span<char>{c.in}, ReadUntil::HttpHead) | ex::let_value([&w, &c](std::size_t received) {
@@ -561,15 +543,15 @@ struct ChainReceiver {
 		w->restart = true;
 	}
 
-	// A failed connection (reset, EPIPE, ...) never stops the worker: note it
-	// and serve the next client. A permanently failing listener would spin
-	// here; acceptable for this slice's scope.
-	auto set_error(NetErr) && noexcept -> void {
-		w->restart = true;
+	auto set_error(NetErr err) && noexcept -> void {
+		if (err_transient(err.code)) {
+			w->restart = true;
+		} else {
+			w->finished = true;
+		}
 	}
 
-	// Unreachable under -fno-exceptions (STDEXEC_TRY degrades to a plain
-	// block); reaching it would be an unrecoverable process failure.
+	/** Unreachable under -fno-exceptions; reaching it is process failure. */
 	auto set_error(std::exception_ptr) && noexcept -> void {
 		std::terminate();
 	}
@@ -585,9 +567,10 @@ struct ChainReceiver {
 
 using ChainOp = stdexec::connect_result_t<decltype(make_chain(std::declval<WorkerCore&>())), ChainReceiver>;
 
-// Operation states are immovable; this factory materializes one in place
-// inside std::optional::emplace via the conversion operator (guaranteed
-// copy elision).
+/**
+ * Operation states are immovable; the conversion operator materializes
+ * one in place inside std::optional::emplace (guaranteed copy elision).
+ */
 struct ChainFactory {
 	WorkerCore& w;
 
@@ -601,25 +584,25 @@ struct Worker {
 	std::optional<ChainOp> op;
 };
 
-// The worker's run loop: (re)start the chain, then pump the reactor. Every
-// async operation either completes synchronously inside start() or parks
-// exactly one waiter, so at any loop iteration the chain is either finished,
-// waiting for a restart, or armed — and on stop the armed case is completed
-// through the stopped channel before the operation state is destroyed.
+/**
+ * At every iteration the chain is finished, waiting for a restart, or
+ * armed; on stop the armed case completes through the stopped channel
+ * before its operation state is destroyed.
+ */
 auto run_worker(Worker& worker) noexcept -> void {
 	auto& w = worker.core;
 	w.restart = true;
 	while (!w.finished) {
 		if (w.ctx.stopping) {
 			if (w.ctx.has_armed()) {
-				w.ctx.cancel_armed(); // completes stopped -> finished
+				w.ctx.cancel_armed();
 			} else {
 				w.finished = true;
 			}
 			continue;
 		}
 		if (w.restart) {
-			w.ctx.poll(); // observe a pending stop even if chains keep completing synchronously
+			w.ctx.poll();
 			if (w.ctx.stopping) {
 				continue;
 			}
@@ -634,11 +617,11 @@ auto run_worker(Worker& worker) noexcept -> void {
 	worker.op.reset();
 }
 
-// --- listener factory --------------------------------------------------------
-
-// The one nonblocking loopback listener, shared read-only by every worker
-// (accept(2) and kevent registration are thread-safe on a shared fd).
-// Loopback keeps the example and tests off the host firewall.
+/**
+ * The one loopback listener, shared read-only by every worker —
+ * accept(2) and kevent registration are thread-safe on a shared fd.
+ * Loopback keeps the example and tests off the host firewall.
+ */
 class Listener {
 public:
 	Listener() = default;
@@ -676,6 +659,7 @@ private:
 	int fd_ = -1;
 };
 
+/* PIN(darwin-so-reuseport-no-lb): one shared raced listener, not per-worker SO_REUSEPORT — see PINS.md */
 [[nodiscard]] auto make_listener(std::uint16_t port, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> Listener {
 	auto fail = [&](std::int32_t stage, int fd) -> Listener {
 		err_stage = stage;
@@ -698,7 +682,7 @@ private:
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	// SAFETY: sockaddr_in -> sockaddr is the bind(2) ABI's own aliasing rule.
+	/* SAFETY: sockaddr_in -> sockaddr is the bind(2) ABI's own aliasing rule */
 	if (::bind(fd, reinterpret_cast<::sockaddr const*>(&addr), sizeof addr) < 0) {
 		return fail(stage_bind, fd);
 	}
@@ -715,7 +699,7 @@ private:
 [[nodiscard]] auto bound_port(int fd, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> std::uint16_t {
 	auto addr = ::sockaddr_in{};
 	auto len = ::socklen_t{sizeof addr};
-	// SAFETY: same sockaddr ABI aliasing as bind above.
+	/* SAFETY: same sockaddr ABI aliasing as bind above */
 	if (::getsockname(fd, reinterpret_cast<::sockaddr*>(&addr), &len) < 0) {
 		err_stage = stage_resolve;
 		err_code = errno;
@@ -723,8 +707,6 @@ private:
 	}
 	return ntohs(addr.sin_port);
 }
-
-// --- server: N share-nothing workers on a static_thread_pool ----------------
 
 struct TaskReceiver {
 	using receiver_concept = stdexec::receiver_t;
@@ -750,8 +732,6 @@ struct TaskReceiver {
 
 using PoolScheduler = decltype(std::declval<ex::static_thread_pool&>().get_scheduler());
 
-// One worker task: pin run_worker to a pool thread. The pool has exactly one
-// thread per worker, so this is thread-per-core, not oversubscription.
 auto make_task(PoolScheduler scheduler, Worker* worker) {
 	return ex::starts_on(scheduler, ex::just() | ex::then([worker] {
 		                                run_worker(*worker);
@@ -770,7 +750,11 @@ struct TaskFactory {
 	}
 };
 
-} // namespace
+}
+
+[[nodiscard]] auto buffer_capacity() noexcept -> std::size_t {
+	return buffer_bytes;
+}
 
 struct Server {
 	Server(std::uint32_t worker_count, RawHandler request_handler)
@@ -783,9 +767,11 @@ struct Server {
 	Listener listener{};
 	std::array<Worker, max_workers> workers{};
 	std::array<std::optional<TaskOp>, max_workers> tasks{};
-	// Declared after the task operation states on purpose: destruction joins
-	// the pool threads BEFORE the operation states they may still be
-	// unwinding through are destroyed.
+	/**
+	 * Declared after the task operation states: destruction joins the
+	 * pool threads before the operation states they may still be
+	 * unwinding through are destroyed.
+	 */
 	ex::static_thread_pool pool;
 	bool started = false;
 	bool stopped = false;
@@ -798,9 +784,7 @@ struct Server {
 	auto const count = std::clamp(workers, std::uint32_t{1}, max_workers);
 	auto server = std::unique_ptr<Server>{new Server{count, handler}};
 
-	// The one shared listener (see the header comment: Darwin SO_REUSEPORT
-	// does not load-balance, so per-worker listeners would starve all but
-	// the last-bound worker). Workers race nonblocking accepts on this fd.
+	/* PIN(darwin-so-reuseport-no-lb): workers race accepts on this one shared listener — see PINS.md */
 	server->listener = make_listener(port, err_stage, err_code);
 	if (server->listener.fd() < 0) {
 		return nullptr;
@@ -835,8 +819,6 @@ struct Server {
 	return server.port;
 }
 
-// Idempotent; single external owner (the :net partition's HttpServer).
-// Returns after every worker has quiesced.
 auto server_stop(Server& server) noexcept -> void {
 	if (!server.started || server.stopped) {
 		return;
@@ -853,7 +835,7 @@ auto server_destroy(Server* server) noexcept -> void {
 		return;
 	}
 	server_stop(*server);
-	delete server; // pool destructor joins the (now idle) worker threads
+	delete server;
 }
 
 [[nodiscard]] auto hardware_worker_count() noexcept -> std::uint32_t {
@@ -861,11 +843,12 @@ auto server_destroy(Server* server) noexcept -> void {
 	return count == 0 ? 1 : count;
 }
 
-// Blocks until SIGINT or SIGTERM. The dispositions are set to SIG_IGN so
-// default delivery cannot kill the process first; EVFILT_SIGNAL still
-// records ignored signals (kqueue contract), so the kevent wait observes
-// them. This is the entire signal-handling machinery — no handler runs any
-// user code.
+/**
+ * Dispositions are set to SIG_IGN so default delivery cannot kill the
+ * process first; EVFILT_SIGNAL still records ignored signals (kqueue
+ * contract), so the kevent wait observes them. No handler runs user
+ * code.
+ */
 auto interrupt_wait() noexcept -> void {
 	static_cast<void>(std::signal(SIGINT, SIG_IGN));
 	static_cast<void>(std::signal(SIGTERM, SIG_IGN));
@@ -883,10 +866,8 @@ auto interrupt_wait() noexcept -> void {
 	::close(kq);
 }
 
-// stdout is fully buffered when piped; the example prints its resolved port
-// before blocking on interrupt_wait, so the write must reach the pipe now.
 auto output_flush() noexcept -> void {
 	static_cast<void>(std::fflush(nullptr));
 }
 
-} // namespace starter::net_backend
+}

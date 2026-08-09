@@ -1,6 +1,5 @@
-# The :exec partition is the dialect-clean execution surface; it is still a
-# partition of the single starter module target defined in src/CMakeLists.txt
-# (same arrangement as unsafe/'s :net).
+# The :exec partition is still a partition of the single starter module
+# target defined in src/CMakeLists.txt (same arrangement as unsafe/'s :net).
 target_sources(starter_module
 	PUBLIC
 		FILE_SET CXX_MODULES
@@ -8,22 +7,16 @@ target_sources(starter_module
 			${CMAKE_CURRENT_SOURCE_DIR}/exec.cc
 )
 
-# The swap-boundary TU. It must stay module-free: GCC 16.1 ICEs when stdexec
-# headers are included in any module unit (pinned in exec.backend.cc), so
-# the boundary is an ordinary TU behind a narrow ABI. Scanning is disabled
-# because this TU may never import (or be imported); the synthesized std
-# module is off for the same reason.
+# PIN(gcc-gmf-stdexec-ice): the combinator half of the swap boundary stays a
+# plain module-free TU — see PINS.md. Scanning and the synthesized std module
+# are off because this TU may never import or be imported.
 add_library(starter_exec_backend STATIC
 	exec.backend.cc
 )
 
-# -Wnull-dereference is a middle-end warning and does not honor the SYSTEM
-# include suppression once stdexec's intrusive-queue splice is inlined under
-# the sanitizer preset's -O2 (false positive inside
-# stdexec/__detail/__intrusive_queue.hpp). Dropped for this quarantine TU
-# only — source-level property so it lands after the language profile's
-# -Wnull-dereference on the command line; the profile keeps it everywhere
-# else.
+# -Wno-null-dereference: middle-end warning ignores the SYSTEM suppression
+# once stdexec's intrusive-queue splice inlines at -O2; source-level property
+# so it lands after the profile's flag, which stays on everywhere else.
 set_source_files_properties(exec.backend.cc PROPERTIES
 	CXX_SCAN_FOR_MODULES OFF
 	COMPILE_OPTIONS -Wno-null-dereference
@@ -31,19 +24,14 @@ set_source_files_properties(exec.backend.cc PROPERTIES
 
 set_target_properties(starter_exec_backend PROPERTIES CXX_MODULE_STD OFF)
 
-# The vendored headers are visible to this target only: nothing else in the
-# build may see them (the whole point of the swap boundary). SYSTEM keeps
-# the -Werror build clean — stdexec emits -Wmissing-field-initializers under
-# -Wextra (probe-verified, from __continues_on.hpp).
+# Vendored headers visible to this target only; SYSTEM keeps -Werror clean
+# (stdexec emits -Wmissing-field-initializers under -Wextra).
 target_include_directories(starter_exec_backend SYSTEM PRIVATE
 	${stdexec_SOURCE_DIR}/include
 )
 
-# Probe-verified UBSan carve-out: the null, nonnull-attribute, and
-# returns-nonnull-attribute sub-checks of -fsanitize=undefined break
-# COMPILATION of stdexec's consteval completion-signature machinery
-# (address comparison of __mtypeid_v objects is "not a constant
-# expression"). A no-op when no sanitizer is enabled.
+# UBSan carve-out (probe-verified): these sub-checks break COMPILATION of
+# stdexec's consteval signature machinery; a no-op without sanitizers.
 target_compile_options(starter_exec_backend PRIVATE
 	-fno-sanitize=null,nonnull-attribute,returns-nonnull-attribute
 )

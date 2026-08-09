@@ -1,21 +1,6 @@
-// conformance.test.cc — the executable toolchain spec.
-//
-// This TU pins what the production toolchain (GCC 16.1.0, -std=c++26
-// -freflection, libstdc++) actually delivers. Conformance failures are
-// preferred as compile failures: everything that can be checked in
-// static_assert/consteval is. The reflection block below makes this TU
-// GCC-only; it is excluded from the Clang lint graph in CMakeLists.txt.
-//
-// Feature-test macros are preprocessor state, which `import std;` does not
-// (and cannot) provide; <version> is the macro-only header for exactly this
-// purpose.
 #include <version>
 
 import std;
-
-// ---------------------------------------------------------------------------
-// Compile-time gate: feature-test macros the probes verified.
-// ---------------------------------------------------------------------------
 
 static_assert(__cplusplus >= 202400L, "C++26 mode required");
 static_assert(__cpp_lib_inplace_vector >= 202603L, "std::inplace_vector");
@@ -23,75 +8,43 @@ static_assert(__cpp_lib_indirect >= 202502L, "std::indirect (<memory>)");
 static_assert(__cpp_lib_polymorphic >= 202502L, "std::polymorphic (<memory>)");
 static_assert(__cpp_lib_function_ref >= 202603L, "std::function_ref");
 static_assert(__cpp_lib_reflection >= 202603L, "P2996 reflection library");
-// Contracts: the macro is compiler-defined under plain -std=c++26. Note the
-// asymmetry: pre/post/contract_assert *compile* with no extra flag, but
-// *linking* a violation handler needs -lstdc++exp — it is a linker flag.
 static_assert(__cpp_contracts >= 202502L, "P2900 contracts");
 
-// SURPRISE, pinned deliberately: __cpp_lib_optional_ref is UNDEFINED on this
-// toolchain even though std::optional<int&> is fully implemented (exercised
-// below, including write-through). When the macro appears, flip this on:
-// static_assert(__cpp_lib_optional_ref >= 202602L, "std::optional<T&>");
 #ifdef __cpp_lib_optional_ref
-static_assert(false, "__cpp_lib_optional_ref appeared: the toolchain caught up, "
-                     "promote the commented static_assert above and delete this trap");
+static_assert(false, "__cpp_lib_optional_ref appeared: the toolchain caught up — replace this trap with "
+                     "static_assert(__cpp_lib_optional_ref >= 202602L, \"std::optional<T&>\")");
 #endif
 
-// ---------------------------------------------------------------------------
-// Tombstones: capabilities the probes verified as ABSENT. Each names the
-// feature-test macro to flip when the toolchain catches up.
-// ---------------------------------------------------------------------------
-
-// TOMBSTONE(std::execution, P2300 senders/receivers): __cpp_lib_senders is
-// UNDEFINED; <execution> compiles but holds only the classic parallel
-// policies — std::execution::just/then do not exist. The algebra is ACTIVE
-// meanwhile via the pinned reference implementation behind the one swap
-// boundary — two quarantine TUs, foreign/exec.backend.cc (combinators) and
-// unsafe/net.backend.cc (I/O); AGENTS.md §15. This tombstone now
-// signals time-to-delete-the-vendor: when the macro appears, rewrite that
-// boundary over std::execution, drop the stdexec FetchContent pin from the
-// top-level CMakeLists.txt, and promote this assert:
-// static_assert(__cpp_lib_senders >= 202406L, "std::execution (P2300)");
 #ifdef __cpp_lib_senders
-static_assert(false, "__cpp_lib_senders appeared: the toolchain caught up — delete the "
-                     "vendored stdexec, rewrite foreign/exec.backend.cc and unsafe/net.backend.cc "
-                     "over std::execution, and promote the commented static_assert above");
+static_assert(false, "__cpp_lib_senders appeared: the toolchain caught up — retire PINS.md "
+                     "gcc-gmf-stdexec-ice (delete the vendored stdexec, rewrite foreign/exec.backend.cc and "
+                     "unsafe/net.backend.cc over std::execution) and replace this trap with "
+                     "static_assert(__cpp_lib_senders >= 202406L, \"std::execution (P2300)\")");
 #endif
-
-// ---------------------------------------------------------------------------
-// std::optional<int&>: rebinding-free reference semantics, write-through.
-// ---------------------------------------------------------------------------
 
 [[nodiscard]] consteval auto optional_ref_writes_through() -> bool {
 	int slot = 1;
 	std::optional<int&> ref{slot};
-	ref.value() = 5; // .value() -> int&, writes through to the referent
+	ref.value() = 5;
 	return slot == 5 && &ref.value() == &slot && !std::optional<int&>{}.has_value();
 }
 
 static_assert(optional_ref_writes_through());
 
-// ---------------------------------------------------------------------------
-// std::inplace_vector: bounded push, capacity is a compile-time fact.
-// ---------------------------------------------------------------------------
-
+/**
+ * try_push_back's std::optional<T&> return (not P0843R14's T*) is
+ * conforming, not a GCC quirk: P3981R2 (adopted 2026-03) changed it and
+ * libstdc++ tracks the working draft.
+ */
 [[nodiscard]] consteval auto inplace_vector_bounded_push() -> bool {
 	std::inplace_vector<int, 3> v;
 	v.push_back(1);
 	v.push_back(2);
 	v.push_back(3);
-	// Full: try_push_back reports the bound instead of allocating. The
-	// optional<T&> return (not P0843R14's T*) is CONFORMING: P3981R2
-	// ("Better return types in std::inplace_vector...", adopted 2026-03)
-	// changed it; libstdc++ tracks the working draft. Not a GCC quirk.
 	return v.size() == 3 && v.try_push_back(4) == std::nullopt && v[0] == 1 && v[2] == 3 && decltype(v)::capacity() == 3;
 }
 
 static_assert(inplace_vector_bounded_push());
-
-// ---------------------------------------------------------------------------
-// std::expected: monadic composition (and_then / transform / or_else).
-// ---------------------------------------------------------------------------
 
 [[nodiscard]] consteval auto expected_monadic_chain() -> bool {
 	using E = std::expected<int, char>;
@@ -108,7 +61,7 @@ static_assert(inplace_vector_bounded_push());
 	auto const bad = E{std::unexpect, 'e'}
 	                     .transform([](int v) {
 		                     return v + 1;
-	                     }) // skipped on the error path
+	                     })
 	                     .or_else([](char c) -> E {
 		                     return E{std::unexpect, static_cast<char>(c + 1)};
 	                     });
@@ -116,11 +69,6 @@ static_assert(inplace_vector_bounded_push());
 }
 
 static_assert(expected_monadic_chain());
-
-// ---------------------------------------------------------------------------
-// Reflection: expansion-statement static_assert. This block is what makes
-// the TU GCC-only.
-// ---------------------------------------------------------------------------
 
 namespace {
 
@@ -143,15 +91,10 @@ enum class Compass { North, East, South, West };
 	return false;
 }
 
-} // namespace
+}
 
 static_assert(named_enumerator_count() == 4);
 static_assert(first_enumerator_is_north());
-
-// ---------------------------------------------------------------------------
-// Runtime spot-checks for the parts the library does not make consteval:
-// std::function_ref invocation and std::indirect value semantics.
-// ---------------------------------------------------------------------------
 
 namespace {
 
@@ -166,7 +109,7 @@ struct CaseResult {
 		return captured + x;
 	};
 	std::function_ref<int(int)> const ref{add_captured};
-	captured = 30; // function_ref refers, it does not copy the callable
+	captured = 30;
 	return CaseResult{
 	    .name = "function_ref binds a capturing lambda by reference",
 	    .passed = ref(4) == 34,
@@ -175,16 +118,16 @@ struct CaseResult {
 
 [[nodiscard]] auto check_indirect_value_semantics() -> CaseResult {
 	std::indirect<int> const original{11};
-	auto copy = original; // deep copy: distinct object, equal value
+	auto copy = original;
 	*copy += 1;
-	auto const moved = std::move(copy); // source becomes valueless, not null-UB
+	auto const moved = std::move(copy);
 	return CaseResult{
 	    .name = "indirect construction, deep copy, and move are value-shaped",
 	    .passed = *original == 11 && *moved == 12 && copy.valueless_after_move(),
 	};
 }
 
-} // namespace
+}
 
 auto main() -> int {
 	auto const results = std::array{

@@ -56,6 +56,7 @@ Checks: >
   custom-no-dynamic-type,
   custom-no-thread-primitives,
   custom-no-sync-primitives,
+  custom-no-relative-timeouts,
   custom-no-sfinae-relics,
   custom-no-std-function-bind,
   custom-no-using-namespace,
@@ -556,6 +557,23 @@ CustomChecks:
     Diagnostic:
       - BindName: node
         Message: "locks and atomics are restricted to unsafe/ concurrency primitives"
+        Level: Warning
+
+  - Name: no-relative-timeouts
+    Query: |
+      match callExpr(
+        isExpansionInMainFile(),
+        callee(functionDecl(hasAnyName(
+          "sleep_for",
+          "wait_for",
+          "try_lock_for",
+          "try_lock_shared_for",
+          "try_acquire_for"
+        )))
+      ).bind("node")
+    Diagnostic:
+      - BindName: node
+        Message: "relative timeouts drift on interruption and re-arm; take an absolute steady_clock::time_point and use the *_until spelling (AGENTS.md 15)"
         Level: Warning
 
   - Name: no-sfinae-relics

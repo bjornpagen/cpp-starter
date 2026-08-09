@@ -24,7 +24,7 @@ using Greeting = std::expected<std::string, starter::GreetError>;
 	};
 }
 
-} // namespace
+}
 
 auto main() -> int {
 	auto const results = std::array{

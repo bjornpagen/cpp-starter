@@ -1,5 +1,5 @@
-# Runnable examples over the exported module surface. Dialect code: examples
-# obey every rule in AGENTS.md, exactly like src/ and tests/.
+# Runnable examples over the exported module surface: dialect code, same
+# rules as src/ and tests/.
 add_executable(starter_httpd)
 
 target_sources(starter_httpd
