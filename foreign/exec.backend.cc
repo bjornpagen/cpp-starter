@@ -146,7 +146,7 @@ template<class Sndr>
 using ValueTuple = stdexec::value_types_of_t<Sndr, WaitEnv, std::tuple, Single>;
 
 template<class E, stdexec::sender Sndr>
-auto wait(Sndr&& sndr) -> std::optional<std::expected<ValueTuple<Sndr>, E>> {
+[[nodiscard]] auto wait(Sndr&& sndr) -> std::optional<std::expected<ValueTuple<Sndr>, E>> {
 	using Tuple = ValueTuple<Sndr>;
 	WaitState<Tuple, E> state;
 	auto op = stdexec::connect(std::forward<Sndr>(sndr), WaitReceiver<Tuple, E>{&state});
@@ -223,12 +223,12 @@ struct ProbeSender {
 	};
 
 	template<class Rcvr>
-	auto connect(Rcvr rcvr) const noexcept -> Operation<Rcvr> {
+	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> Operation<Rcvr> {
 		return {std::move(rcvr), channel, payload};
 	}
 };
 
-auto flatten(auto&& waited) -> ChainResult {
+[[nodiscard]] auto flatten(auto&& waited) -> ChainResult {
 	if (!waited) {
 		return std::nullopt;
 	}
@@ -240,7 +240,7 @@ auto flatten(auto&& waited) -> ChainResult {
 
 } // namespace
 
-auto value_chain(std::int32_t seed) noexcept -> ChainResult {
+[[nodiscard]] auto value_chain(std::int32_t seed) noexcept -> ChainResult {
 	// just | let_value | then through the value channel: 2*seed + 1.
 	auto chain = ex::just(seed) | ex::let_value([](std::int32_t v) {
 		             return ex::just(v + v);
@@ -251,7 +251,7 @@ auto value_chain(std::int32_t seed) noexcept -> ChainResult {
 	return flatten(ex::wait<BoundaryError>(std::move(chain)));
 }
 
-auto error_recovery_chain(std::int32_t code) noexcept -> ChainResult {
+[[nodiscard]] auto error_recovery_chain(std::int32_t code) noexcept -> ChainResult {
 	// just_error | upon_error: typed error -> value, payload preserved.
 	auto chain = ex::just_error(BoundaryError{code}) | ex::upon_error([](BoundaryError e) {
 		             return e.code + 1;
@@ -259,7 +259,7 @@ auto error_recovery_chain(std::int32_t code) noexcept -> ChainResult {
 	return flatten(ex::wait<BoundaryError>(std::move(chain)));
 }
 
-auto error_reroute_chain(std::int32_t code) noexcept -> ChainResult {
+[[nodiscard]] auto error_reroute_chain(std::int32_t code) noexcept -> ChainResult {
 	// just_error | let_error: typed error -> new sender, payload preserved.
 	auto chain = ex::just_error(BoundaryError{code}) | ex::let_error([](BoundaryError e) {
 		             return ex::just(e.code + e.code);
@@ -267,17 +267,17 @@ auto error_reroute_chain(std::int32_t code) noexcept -> ChainResult {
 	return flatten(ex::wait<BoundaryError>(std::move(chain)));
 }
 
-auto error_passthrough_chain(std::int32_t code) noexcept -> ChainResult {
+[[nodiscard]] auto error_passthrough_chain(std::int32_t code) noexcept -> ChainResult {
 	// Typed error through OUR wait's error channel: unexpected(code).
 	return flatten(ex::wait<BoundaryError>(ProbeSender{Channel::Error, code}));
 }
 
-auto stopped_chain() noexcept -> ChainResult {
+[[nodiscard]] auto stopped_chain() noexcept -> ChainResult {
 	// Stopped channel through OUR wait: nullopt.
 	return flatten(ex::wait<BoundaryError>(ProbeSender{Channel::Stopped, 0}));
 }
 
-auto pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) noexcept -> ChainResult {
+[[nodiscard]] auto pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) noexcept -> ChainResult {
 	// when_all join of three pool tasks reached three verified ways
 	// (starts_on, schedule|then, on), rejoined via continues_on: 2(a+b+c).
 	// `on` returns to the caller's context, which is wait's run_loop
@@ -299,7 +299,7 @@ auto pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) noexcept 
 	return flatten(ex::wait<BoundaryError>(std::move(joined)));
 }
 
-auto variant_roundtrip(std::int32_t value) noexcept -> ChainResult {
+[[nodiscard]] auto variant_roundtrip(std::int32_t value) noexcept -> ChainResult {
 	// into_variant: value completions reified as variant<tuple<...>>.
 	auto chain = ex::just(value) | ex::into_variant() | ex::then([](std::variant<std::tuple<std::int32_t>> v) {
 		             return std::get<0>(std::get<0>(v));
@@ -307,7 +307,7 @@ auto variant_roundtrip(std::int32_t value) noexcept -> ChainResult {
 	return flatten(ex::wait<BoundaryError>(std::move(chain)));
 }
 
-auto stopped_as_optional_chain(bool stop, std::int32_t value) noexcept -> ChainResult {
+[[nodiscard]] auto stopped_as_optional_chain(bool stop, std::int32_t value) noexcept -> ChainResult {
 	// stopped_as_optional: stopped -> disengaged optional value (mapped to
 	// -1 here purely so one scalar crosses the ABI), value -> engaged.
 	// Probe caveat: the child must have exactly one value signature.

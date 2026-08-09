@@ -12,7 +12,7 @@ import std;
 
 namespace starter {
 
-export enum class HttpError : std::uint8_t {
+export enum class [[nodiscard]] HttpError : std::uint8_t {
 	Incomplete,     // no head terminator yet: not an error, read more bytes
 	Malformed,      // protocol violation: reject the request
 	TooManyHeaders, // more than max_header_count field lines
@@ -48,7 +48,7 @@ constexpr std::string_view crlf = "\r\n";
 constexpr std::string_view head_terminator = "\r\n\r\n";
 
 // RFC 9110 token characters (field names and methods).
-constexpr auto is_tchar(char c) -> bool {
+[[nodiscard]] constexpr auto is_tchar(char c) -> bool {
 	if (c >= 'a' && c <= 'z') {
 		return true;
 	}
@@ -61,22 +61,22 @@ constexpr auto is_tchar(char c) -> bool {
 	return std::string_view{"!#$%&'*+-.^_`|~"}.contains(c);
 }
 
-constexpr auto is_token(std::string_view text) -> bool {
+[[nodiscard]] constexpr auto is_token(std::string_view text) -> bool {
 	return !text.empty() && std::ranges::all_of(text, is_tchar);
 }
 
 // Visible characters only: what a request-target may contain (no SP, no
 // controls, no DEL).
-constexpr auto is_vchar(char c) -> bool {
+[[nodiscard]] constexpr auto is_vchar(char c) -> bool {
 	return c > '\x20' && c != '\x7f';
 }
 
 // Field values may additionally contain SP and HTAB between visible chars.
-constexpr auto is_field_char(char c) -> bool {
+[[nodiscard]] constexpr auto is_field_char(char c) -> bool {
 	return is_vchar(c) || c == ' ' || c == '\t';
 }
 
-constexpr auto trim_ows(std::string_view text) -> std::string_view {
+[[nodiscard]] constexpr auto trim_ows(std::string_view text) -> std::string_view {
 	while (text.starts_with(' ') || text.starts_with('\t')) {
 		text.remove_prefix(1);
 	}
@@ -86,14 +86,14 @@ constexpr auto trim_ows(std::string_view text) -> std::string_view {
 	return text;
 }
 
-constexpr auto is_http_version(std::string_view text) -> bool {
+[[nodiscard]] constexpr auto is_http_version(std::string_view text) -> bool {
 	constexpr std::string_view prefix = "HTTP/";
 	return text.size() == prefix.size() + 3 && text.starts_with(prefix) && (text[5] >= '0' && text[5] <= '9') && text[6] == '.' &&
 	       (text[7] >= '0' && text[7] <= '9');
 }
 
 // Splits off the next CRLF-terminated line; the final line owns the rest.
-constexpr auto next_line(std::string_view& remaining) -> std::string_view {
+[[nodiscard]] constexpr auto next_line(std::string_view& remaining) -> std::string_view {
 	auto const end = remaining.find(crlf);
 	if (end == std::string_view::npos) {
 		return std::exchange(remaining, std::string_view{});
@@ -103,7 +103,7 @@ constexpr auto next_line(std::string_view& remaining) -> std::string_view {
 	return line;
 }
 
-constexpr auto decimal_width(std::size_t value) -> std::size_t {
+[[nodiscard]] constexpr auto decimal_width(std::size_t value) -> std::size_t {
 	auto width = std::size_t{1};
 	while (value >= 10) {
 		value /= 10;
@@ -119,7 +119,7 @@ constexpr auto decimal_width(std::size_t value) -> std::size_t {
 // HttpError::Incomplete, so a caller with a torn buffer keeps reading.
 // (Not constexpr/inline: an exported inline function may not reach the
 // TU-local helpers above.)
-export auto parse_request(std::string_view input) -> std::expected<RequestView, HttpError> {
+export [[nodiscard]] auto parse_request(std::string_view input) -> std::expected<RequestView, HttpError> {
 	auto const head_end = input.find(head_terminator);
 	if (head_end == std::string_view::npos) {
 		return std::unexpected(HttpError::Incomplete);
@@ -178,7 +178,7 @@ export struct ResponseHead {
 // derived Content-Length, blank line, body) into the caller's buffer and
 // returns the byte count. The size is computed up front so a short buffer is
 // BufferTooSmall before a single byte is written; nothing allocates.
-export auto write_response(ResponseHead head, std::span<HeaderView const> headers, std::string_view body, std::span<char> out)
+export [[nodiscard]] auto write_response(ResponseHead head, std::span<HeaderView const> headers, std::string_view body, std::span<char> out)
     -> std::expected<std::size_t, HttpError> {
 	constexpr std::string_view status_prefix = "HTTP/1.1 ";
 	constexpr std::string_view length_prefix = "Content-Length: ";

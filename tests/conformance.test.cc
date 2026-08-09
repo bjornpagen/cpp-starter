@@ -62,7 +62,7 @@ static_assert(false, "__cpp_lib_senders appeared: the toolchain caught up — de
 // std::optional<int&>: rebinding-free reference semantics, write-through.
 // ---------------------------------------------------------------------------
 
-consteval auto optional_ref_writes_through() -> bool {
+[[nodiscard]] consteval auto optional_ref_writes_through() -> bool {
 	int slot = 1;
 	std::optional<int&> ref{slot};
 	ref.value() = 5; // .value() -> int&, writes through to the referent
@@ -75,7 +75,7 @@ static_assert(optional_ref_writes_through());
 // std::inplace_vector: bounded push, capacity is a compile-time fact.
 // ---------------------------------------------------------------------------
 
-consteval auto inplace_vector_bounded_push() -> bool {
+[[nodiscard]] consteval auto inplace_vector_bounded_push() -> bool {
 	std::inplace_vector<int, 3> v;
 	v.push_back(1);
 	v.push_back(2);
@@ -93,7 +93,7 @@ static_assert(inplace_vector_bounded_push());
 // std::expected: monadic composition (and_then / transform / or_else).
 // ---------------------------------------------------------------------------
 
-consteval auto expected_monadic_chain() -> bool {
+[[nodiscard]] consteval auto expected_monadic_chain() -> bool {
 	using E = std::expected<int, char>;
 	auto const good = E{20}
 	                      .and_then([](int v) -> E {
@@ -126,7 +126,7 @@ namespace {
 
 enum class Compass { North, East, South, West };
 
-consteval auto named_enumerator_count() -> std::size_t {
+[[nodiscard]] consteval auto named_enumerator_count() -> std::size_t {
 	auto count = std::size_t{0};
 	template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^Compass))) {
 		if (!std::meta::identifier_of(enumerator).empty()) {
@@ -136,7 +136,7 @@ consteval auto named_enumerator_count() -> std::size_t {
 	return count;
 }
 
-consteval auto first_enumerator_is_north() -> bool {
+[[nodiscard]] consteval auto first_enumerator_is_north() -> bool {
 	template for (constexpr auto enumerator : std::define_static_array(std::meta::enumerators_of(^^Compass))) {
 		return std::meta::identifier_of(enumerator) == "North";
 	}
@@ -160,7 +160,7 @@ struct CaseResult {
 	bool passed;
 };
 
-auto check_function_ref_binds_lambda() -> CaseResult {
+[[nodiscard]] auto check_function_ref_binds_lambda() -> CaseResult {
 	int captured = 3;
 	auto const add_captured = [&captured](int x) {
 		return captured + x;
@@ -173,7 +173,7 @@ auto check_function_ref_binds_lambda() -> CaseResult {
 	};
 }
 
-auto check_indirect_value_semantics() -> CaseResult {
+[[nodiscard]] auto check_indirect_value_semantics() -> CaseResult {
 	std::indirect<int> const original{11};
 	auto copy = original; // deep copy: distinct object, equal value
 	*copy += 1;

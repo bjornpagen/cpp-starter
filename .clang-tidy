@@ -116,6 +116,18 @@ FormatStyle: file
 
 CheckOptions:
   # -------------------------------------------------------------------------
+  # Return values are contracts (AGENTS.md §26)
+  # -------------------------------------------------------------------------
+  # The lint graph's supplement to the compiler-rung [[nodiscard]] law:
+  # discarding any expected/optional-returning call is a finding even if the
+  # function itself lost its attribute. The type list is LLVM 22's default
+  # plus ::std::optional, pinned explicitly so a tool upgrade cannot silently
+  # shrink it. AllowCastToVoid stays false: (void) is a retired spelling —
+  # discards are std::ignore = (values) or auto _ = (RAII holds).
+  bugprone-unused-return-value.AllowCastToVoid: 'false'
+  bugprone-unused-return-value.CheckedReturnTypes: '^::std::error_code$;^::std::error_condition$;^::std::errc$;^::std::expected$;^::std::optional$;^::boost::system::error_code$'
+
+  # -------------------------------------------------------------------------
   # Preprocessor
   # -------------------------------------------------------------------------
   # Normal project code may not use macros at all. The repository policy

@@ -101,3 +101,5 @@ set_source_files_properties(conformance.test.cc PROPERTIES
 )
 
 add_test(NAME starter.conformance COMMAND starter_conformance_tests)
+
+add_subdirectory(compile_fail)

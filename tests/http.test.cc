@@ -16,7 +16,7 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
                                            "Accept:  */* \r\n"
                                            "\r\n";
 
-auto check_valid_request_line() -> CaseResult {
+[[nodiscard]] auto check_valid_request_line() -> CaseResult {
 	auto const parsed = starter::parse_request(valid_request);
 	return CaseResult{
 	    .name = "valid request: method/target/version parsed",
@@ -24,7 +24,7 @@ auto check_valid_request_line() -> CaseResult {
 	};
 }
 
-auto check_valid_headers() -> CaseResult {
+[[nodiscard]] auto check_valid_headers() -> CaseResult {
 	auto const parsed = starter::parse_request(valid_request);
 	return CaseResult{
 	    .name = "valid request: headers parsed, OWS trimmed",
@@ -34,7 +34,7 @@ auto check_valid_headers() -> CaseResult {
 	};
 }
 
-auto check_no_headers() -> CaseResult {
+[[nodiscard]] auto check_no_headers() -> CaseResult {
 	auto const parsed = starter::parse_request("GET / HTTP/1.1\r\n\r\n");
 	return CaseResult{
 	    .name = "request without headers parses with an empty header list",
@@ -42,11 +42,11 @@ auto check_no_headers() -> CaseResult {
 	};
 }
 
-auto parse_prefix_incomplete(std::size_t length) -> bool {
+[[nodiscard]] auto parse_prefix_incomplete(std::size_t length) -> bool {
 	return starter::parse_request(valid_request.substr(0, length)) == std::unexpected(starter::HttpError::Incomplete);
 }
 
-auto check_torn_buffer_prefixes() -> CaseResult {
+[[nodiscard]] auto check_torn_buffer_prefixes() -> CaseResult {
 	// Every strict prefix of a valid request lacks the head terminator and
 	// must report Incomplete (keep reading), never Malformed.
 	auto passed = true;
@@ -56,7 +56,7 @@ auto check_torn_buffer_prefixes() -> CaseResult {
 	return CaseResult{.name = "every torn-buffer prefix is Incomplete, not Malformed", .passed = passed};
 }
 
-auto check_malformed_request_lines() -> CaseResult {
+[[nodiscard]] auto check_malformed_request_lines() -> CaseResult {
 	using enum starter::HttpError;
 	auto const malformed = std::array<std::string_view, 6>{
 	    "GET /\r\n\r\n",              // missing version
@@ -73,7 +73,7 @@ auto check_malformed_request_lines() -> CaseResult {
 	return CaseResult{.name = "malformed request lines are rejected", .passed = passed};
 }
 
-auto check_malformed_headers() -> CaseResult {
+[[nodiscard]] auto check_malformed_headers() -> CaseResult {
 	using enum starter::HttpError;
 	auto const malformed = std::array<std::string_view, 3>{
 	    "GET / HTTP/1.1\r\nHost localhost\r\n\r\n", // no colon
@@ -87,7 +87,7 @@ auto check_malformed_headers() -> CaseResult {
 	return CaseResult{.name = "malformed header lines are rejected", .passed = passed};
 }
 
-auto check_too_many_headers() -> CaseResult {
+[[nodiscard]] auto check_too_many_headers() -> CaseResult {
 	auto request = std::string{"GET / HTTP/1.1\r\n"};
 	for (auto index = std::size_t{0}; index < starter::max_header_count + 1; ++index) {
 		request += std::format("X-Filler-{}: {}\r\n", index, index);
@@ -99,7 +99,7 @@ auto check_too_many_headers() -> CaseResult {
 	};
 }
 
-auto check_write_response() -> CaseResult {
+[[nodiscard]] auto check_write_response() -> CaseResult {
 	auto buffer = std::array<char, 256>{};
 	auto const headers = std::array{starter::HeaderView{.name = "Content-Type", .value = "text/plain"}};
 	auto const written =
@@ -115,7 +115,7 @@ auto check_write_response() -> CaseResult {
 	};
 }
 
-auto check_write_response_roundtrip() -> CaseResult {
+[[nodiscard]] auto check_write_response_roundtrip() -> CaseResult {
 	// The writer's output head must parse back cleanly with the same shape
 	// rules the server applies to requests... responses share the field-line
 	// grammar, so reuse the parser on a synthetic request wrapping the head.
@@ -130,7 +130,7 @@ auto check_write_response_roundtrip() -> CaseResult {
 	};
 }
 
-auto check_write_response_too_small() -> CaseResult {
+[[nodiscard]] auto check_write_response_too_small() -> CaseResult {
 	auto buffer = std::array<char, 16>{};
 	auto const written = starter::write_response(starter::ResponseHead{.status = 200, .reason = "OK"},
 	                                             std::span<starter::HeaderView const>{}, "body", std::span{buffer});

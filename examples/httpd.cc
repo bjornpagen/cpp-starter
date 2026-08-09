@@ -16,7 +16,7 @@ namespace {
 constexpr auto text_plain = std::array{starter::HeaderView{.name = "Content-Type", .value = "text/plain"}};
 
 struct WorkerHandler {
-	auto operator()(std::uint32_t worker, std::string_view request, std::span<char> out) const -> std::size_t {
+	[[nodiscard]] auto operator()(std::uint32_t worker, std::string_view request, std::span<char> out) const -> std::size_t {
 		auto const parsed = starter::parse_request(request);
 		if (!parsed) {
 			return starter::write_response(starter::ResponseHead{.status = 400, .reason = "Bad Request"}, text_plain, "bad request\n", out)

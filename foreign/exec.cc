@@ -31,21 +31,23 @@ import std;
 extern "C++" {
 namespace starter::exec_backend {
 
-auto value_chain(std::int32_t seed) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto value_chain(std::int32_t seed) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto error_recovery_chain(std::int32_t code) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto error_recovery_chain(std::int32_t code) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto error_reroute_chain(std::int32_t code) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto error_reroute_chain(std::int32_t code) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto error_passthrough_chain(std::int32_t code) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto error_passthrough_chain(std::int32_t code) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto stopped_chain() noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto stopped_chain() noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) noexcept
+    -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto variant_roundtrip(std::int32_t value) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto variant_roundtrip(std::int32_t value) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
-auto stopped_as_optional_chain(bool stop, std::int32_t value) noexcept -> std::optional<std::expected<std::int32_t, std::int32_t>>;
+[[nodiscard]] auto stopped_as_optional_chain(bool stop, std::int32_t value) noexcept
+    -> std::optional<std::expected<std::int32_t, std::int32_t>>;
 
 } // namespace starter::exec_backend
 }
@@ -54,7 +56,7 @@ namespace starter {
 
 // The typed asynchronous error: sender error channels carry values, never
 // exceptions (AGENTS.md §11); only the payload crosses the narrow ABI.
-export struct ExecError {
+export struct [[nodiscard]] ExecError {
 	std::int32_t code;
 
 	// Spelled out, not `= default`: GCC 16.1 pinned quirk — streaming a
@@ -72,7 +74,7 @@ export using ExecResult = std::optional<std::expected<std::int32_t, ExecError>>;
 
 namespace {
 
-auto lift(std::optional<std::expected<std::int32_t, std::int32_t>> raw) -> ExecResult {
+[[nodiscard]] auto lift(std::optional<std::expected<std::int32_t, std::int32_t>> raw) -> ExecResult {
 	if (!raw) {
 		return std::nullopt;
 	}
@@ -84,44 +86,44 @@ auto lift(std::optional<std::expected<std::int32_t, std::int32_t>> raw) -> ExecR
 } // namespace
 
 // just | let_value | then through the value channel: 2*seed + 1.
-export auto exec_value_chain(std::int32_t seed) -> ExecResult {
+export [[nodiscard]] auto exec_value_chain(std::int32_t seed) -> ExecResult {
 	return lift(exec_backend::value_chain(seed));
 }
 
 // just_error | upon_error: typed error recovered to a value, code + 1.
-export auto exec_error_recovery_chain(std::int32_t code) -> ExecResult {
+export [[nodiscard]] auto exec_error_recovery_chain(std::int32_t code) -> ExecResult {
 	return lift(exec_backend::error_recovery_chain(code));
 }
 
 // just_error | let_error: typed error rerouted to a new sender, 2*code.
-export auto exec_error_reroute_chain(std::int32_t code) -> ExecResult {
+export [[nodiscard]] auto exec_error_reroute_chain(std::int32_t code) -> ExecResult {
 	return lift(exec_backend::error_reroute_chain(code));
 }
 
 // Typed error delivered through wait's error channel: unexpected(code).
-export auto exec_error_passthrough_chain(std::int32_t code) -> ExecResult {
+export [[nodiscard]] auto exec_error_passthrough_chain(std::int32_t code) -> ExecResult {
 	return lift(exec_backend::error_passthrough_chain(code));
 }
 
 // Stopped channel delivered through wait: std::nullopt.
-export auto exec_stopped_chain() -> ExecResult {
+export [[nodiscard]] auto exec_stopped_chain() -> ExecResult {
 	return lift(exec_backend::stopped_chain());
 }
 
 // when_all join of three thread-pool tasks (starts_on, schedule, on),
 // rejoined via continues_on: 2*(a + b + c).
-export auto exec_pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) -> ExecResult {
+export [[nodiscard]] auto exec_pool_when_all_sum(std::int32_t a, std::int32_t b, std::int32_t c) -> ExecResult {
 	return lift(exec_backend::pool_when_all_sum(a, b, c));
 }
 
 // into_variant round trip: the value comes back unchanged.
-export auto exec_variant_roundtrip(std::int32_t value) -> ExecResult {
+export [[nodiscard]] auto exec_variant_roundtrip(std::int32_t value) -> ExecResult {
 	return lift(exec_backend::variant_roundtrip(value));
 }
 
 // stopped_as_optional: value passes through engaged; stopped materializes
 // as the disengaged marker -1 instead of ending the chain.
-export auto exec_stopped_as_optional_chain(bool stop, std::int32_t value) -> ExecResult {
+export [[nodiscard]] auto exec_stopped_as_optional_chain(bool stop, std::int32_t value) -> ExecResult {
 	return lift(exec_backend::stopped_as_optional_chain(stop, value));
 }
 

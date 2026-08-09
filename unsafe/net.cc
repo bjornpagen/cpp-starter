@@ -27,16 +27,16 @@ struct Server;
 
 using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity);
 
-auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage, std::int32_t& err_code) noexcept
-    -> Server*;
+[[nodiscard]] auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage,
+                                std::int32_t& err_code) noexcept -> Server*;
 
-auto server_port(Server const& server) noexcept -> std::uint16_t;
+[[nodiscard]] auto server_port(Server const& server) noexcept -> std::uint16_t;
 
 auto server_stop(Server& server) noexcept -> void;
 
 auto server_destroy(Server* server) noexcept -> void;
 
-auto hardware_worker_count() noexcept -> std::uint32_t;
+[[nodiscard]] auto hardware_worker_count() noexcept -> std::uint32_t;
 
 auto interrupt_wait() noexcept -> void;
 
@@ -65,7 +65,7 @@ export enum class NetStage : std::int32_t {
 // The typed network error: the failing stage plus its errno payload. Sender
 // error channels inside the boundary carry this as a value (AGENTS.md §11);
 // synchronous startup failure carries it through std::expected.
-export struct NetError {
+export struct [[nodiscard]] NetError {
 	NetStage stage;
 	std::int32_t code;
 
@@ -96,7 +96,7 @@ concept RequestHandler = std::is_empty_v<F> && std::default_initializable<F> &&
 // A running share-nothing HTTP server: a unique capability over the
 // backend's workers. stop() is idempotent and returns once every worker has
 // quiesced; destruction stops and joins.
-export class HttpServer {
+export class [[nodiscard]] HttpServer {
 public:
 	HttpServer(HttpServer&& other) noexcept : impl_{std::exchange(other.impl_, nullptr)} {}
 
@@ -144,7 +144,7 @@ private:
 // Starts config.workers share-nothing workers, each with its own io-context,
 // racing nonblocking accepts on one shared loopback listener.
 export template<RequestHandler F>
-auto serve_http(HttpServerConfig config, F) -> std::expected<HttpServer, NetError> {
+[[nodiscard]] auto serve_http(HttpServerConfig config, F) -> std::expected<HttpServer, NetError> {
 	auto stage = std::int32_t{0};
 	auto code = std::int32_t{0};
 	auto* impl = net_backend::server_start(
@@ -161,7 +161,7 @@ auto serve_http(HttpServerConfig config, F) -> std::expected<HttpServer, NetErro
 
 // One worker per hardware thread is the share-nothing default; callers cap
 // it (the example uses std::min(hardware_workers(), 4)).
-export auto hardware_workers() -> std::uint32_t {
+export [[nodiscard]] auto hardware_workers() -> std::uint32_t {
 	return net_backend::hardware_worker_count();
 }
 

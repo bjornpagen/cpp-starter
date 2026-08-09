@@ -104,7 +104,7 @@ struct NetErr {
 // EV_SET is a field-assignment macro whose implicit int conversions trip
 // -Wconversion at the expansion site; this helper is the same thing with the
 // conversions spelled.
-auto make_event(std::uintptr_t ident, std::int16_t filter, std::uint16_t flags, std::uint32_t fflags, void* udata) noexcept
+[[nodiscard]] auto make_event(std::uintptr_t ident, std::int16_t filter, std::uint16_t flags, std::uint32_t fflags, void* udata) noexcept
     -> struct ::kevent {
 	struct ::kevent ev{};
 	ev.ident = ident;
@@ -117,7 +117,8 @@ auto make_event(std::uintptr_t ident, std::int16_t filter, std::uint16_t flags, 
 
 }
 
-auto set_nonblocking(int fd) noexcept -> std::int32_t {
+[[nodiscard]] auto
+set_nonblocking(int fd) noexcept -> std::int32_t {
 	auto const flags = ::fcntl(fd, F_GETFL, 0);
 	if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
 		return errno;
@@ -348,12 +349,12 @@ struct AcceptSender {
 	int lfd;
 
 	template<class Rcvr>
-	auto connect(Rcvr rcvr) const noexcept -> AcceptOp<Rcvr> {
+	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> AcceptOp<Rcvr> {
 		return {std::move(rcvr), ctx, lfd};
 	}
 };
 
-auto async_accept(Ctx& ctx, int listener_fd) noexcept -> AcceptSender {
+[[nodiscard]] auto async_accept(Ctx& ctx, int listener_fd) noexcept -> AcceptSender {
 	return {&ctx, listener_fd};
 }
 
@@ -443,12 +444,12 @@ struct ReadSender {
 	ReadUntil until;
 
 	template<class Rcvr>
-	auto connect(Rcvr rcvr) const noexcept -> ReadOp<Rcvr> {
+	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> ReadOp<Rcvr> {
 		return {std::move(rcvr), ctx, fd, buffer, until};
 	}
 };
 
-auto async_read(Ctx& ctx, int fd, std::span<char> buffer, ReadUntil until) noexcept -> ReadSender {
+[[nodiscard]] auto async_read(Ctx& ctx, int fd, std::span<char> buffer, ReadUntil until) noexcept -> ReadSender {
 	return {&ctx, fd, buffer, until};
 }
 
@@ -515,12 +516,12 @@ struct WriteSender {
 	std::span<char const> data;
 
 	template<class Rcvr>
-	auto connect(Rcvr rcvr) const noexcept -> WriteOp<Rcvr> {
+	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> WriteOp<Rcvr> {
 		return {std::move(rcvr), ctx, fd, data};
 	}
 };
 
-auto async_write(Ctx& ctx, int fd, std::span<char const> data) noexcept -> WriteSender {
+[[nodiscard]] auto async_write(Ctx& ctx, int fd, std::span<char const> data) noexcept -> WriteSender {
 	return {&ctx, fd, data};
 }
 
@@ -675,7 +676,7 @@ private:
 	int fd_ = -1;
 };
 
-auto make_listener(std::uint16_t port, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> Listener {
+[[nodiscard]] auto make_listener(std::uint16_t port, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> Listener {
 	auto fail = [&](std::int32_t stage, int fd) -> Listener {
 		err_stage = stage;
 		err_code = errno;
@@ -711,7 +712,7 @@ auto make_listener(std::uint16_t port, std::int32_t& err_stage, std::int32_t& er
 	return Listener{fd};
 }
 
-auto bound_port(int fd, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> std::uint16_t {
+[[nodiscard]] auto bound_port(int fd, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> std::uint16_t {
 	auto addr = ::sockaddr_in{};
 	auto len = ::socklen_t{sizeof addr};
 	// SAFETY: same sockaddr ABI aliasing as bind above.
@@ -790,8 +791,8 @@ struct Server {
 	bool stopped = false;
 };
 
-auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage, std::int32_t& err_code) noexcept
-    -> Server* {
+[[nodiscard]] auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage,
+                                std::int32_t& err_code) noexcept -> Server* {
 	err_stage = 0;
 	err_code = 0;
 	auto const count = std::clamp(workers, std::uint32_t{1}, max_workers);
@@ -830,7 +831,7 @@ auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler,
 	return server.release();
 }
 
-auto server_port(Server const& server) noexcept -> std::uint16_t {
+[[nodiscard]] auto server_port(Server const& server) noexcept -> std::uint16_t {
 	return server.port;
 }
 
@@ -855,7 +856,7 @@ auto server_destroy(Server* server) noexcept -> void {
 	delete server; // pool destructor joins the (now idle) worker threads
 }
 
-auto hardware_worker_count() noexcept -> std::uint32_t {
+[[nodiscard]] auto hardware_worker_count() noexcept -> std::uint32_t {
 	auto const count = std::thread::hardware_concurrency();
 	return count == 0 ? 1 : count;
 }
