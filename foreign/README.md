@@ -19,9 +19,18 @@ Current residents:
 
 - `exec.cc` — the `starter:exec` partition: the dialect-clean sender/receiver
   surface (module code, no headers).
-- `exec.backend.cc` — the ONE stdexec swap boundary (see the comment block at
-  its top and AGENTS.md §15); no other file in the repository may include a
-  stdexec header or spell `stdexec::`/`exec::`.
+- `exec.backend.cc` — the combinator half of the stdexec swap boundary
+  (AGENTS.md §15); the I/O half is `unsafe/net.backend.cc`, and together the
+  two are the entire stdexec spelling surface of the repository — no other
+  file may include a stdexec header or spell `stdexec::`/`exec::`. The
+  boundary is two plain (non-module) TUs reached through `extern "C++"`
+  narrow ABIs because the pinned GCC ICEs whenever a stdexec header appears
+  in any module unit (PINS.md `gcc-gmf-stdexec-ice`), so sender composition
+  cannot cross the module boundary — only concrete function surfaces do.
+  When the toolchain ships `__cpp_lib_senders` (tombstone in
+  tests/conformance.test.cc), each TU's `namespace ex` re-binds to
+  `std::execution`, the FetchContent pin is deleted, and importers of the
+  partitions are untouched.
 - stdexec is consumed from the maintained fork (bjornpagen/stdexec, branch
   `integration`) pinned in the top-level CMakeLists: fixes are real fork
   commits with pending upstream PRs, never configure-time patches. Policy
