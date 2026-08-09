@@ -158,6 +158,53 @@ only if a reviewer asks:
   the established `tests/base` wrapper convention (same form in
   `assert.h`, `AvailabilityMacros.h`, `time.h`, ...).
 
+## Design space (crib sheet for review replies — NOT part of the email)
+
+The email's "Alternatives considered" paragraph is the compressed form;
+this is the full analysis, kept so the reasoning is on hand when a
+reviewer pushes on it.
+
+- **A. Fix the SDK (Apple).** The root cause: the guard tests
+  `__has_feature(modules)` as a proxy for "is clang whose stddef.h
+  implements the `__need_rsize_t` protocol". Correct in principle,
+  non-actionable as the primary fix: the SDK is closed, Feedback
+  timescales are years, and every already-shipped SDK stays broken
+  forever — GCC needs the fixinclude for those regardless. (Context for
+  tone: the header's delegation dance is not gratuitous — under clang
+  modules a typedef should be owned by one module, the builtin stddef
+  module, so deferring to clang's stddef.h avoids an ownership
+  conflict. The plain-typedef branch we route GCC onto is the branch
+  Apple already maintains for every non-clang, non-modules compile.)
+- **B. The deeper GCC fix: honor `__need_rsize_t` in gcc/ginclude/
+  stddef.h.** GCC's stddef.h already implements its own ancient
+  `__need_*` protocol (`__need_size_t`, `__need_wchar_t`, ...); clang
+  extended the family, and `__need_rsize_t` is one of its members.
+  Honoring it is ~three lines (`rsize_t` is `size_t`, C11 K.3.3) and
+  fixes the CLASS — any header speaking clang's protocol, any target —
+  where the fixinclude fixes the INSTANCE. Why it is not the lead: it
+  changes a public GCC header on every target to track a *clang
+  extension* (slippery slope — clang has more `__need_*` members where
+  that came from), and it re-opens the Annex K question (the GCC/glibc
+  world has a decade of hostility to `rsize_t`'s family; even a
+  typedef-under-explicit-request may draw that fight). Both are
+  front-end-maintainer debates with stall risk; fixincludes is the
+  purpose-built, darwin-scoped channel with zero blast radius. **If a
+  reviewer prefers B, the answer is yes**: offer to implement it as a
+  follow-up, and note the fixinclude remains wanted either way for
+  symmetry with shipped SDKs.
+- **C. The fixinclude (this patch).** One predicate corrected to test
+  what it always meant (`defined(__clang__) && ...`); idempotent via
+  the `__clang__` bypass; fixture + regenerated table. Not "ifdef
+  hell": no conditional is added — the existing one is made truthful,
+  and the repair is quarantined at install time instead of leaking
+  into code.
+- **D. Stop reporting `__has_feature(modules)`.** Lying about a real
+  capability to dodge one broken header; breaks every legitimate
+  feature test. Disqualified.
+- **E. Patch libstdc++ (`std.cc`) around it.** Fixes one consumer;
+  every other `<string.h>`-under-modules user stays broken. Wrong
+  layer — the symptom's surface, not the wrong thing itself.
+
 ## genfixes gate: CLEARED (2026-08-09)
 
 `./genfixes` run with AutoGen 5.18.16 (vanilla gcc:16.1.0 container over
