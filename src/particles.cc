@@ -30,14 +30,12 @@ export constexpr auto soa_capacity = std::size_t{1024};
 
 template<class T>
 consteval auto member_count() -> std::size_t {
-	return std::meta::nonstatic_data_members_of(
-		^^T, std::meta::access_context::current()).size();
+	return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::current()).size();
 }
 
 template<class T>
 consteval auto all_members_are_float() -> bool {
-	for (auto member : std::meta::nonstatic_data_members_of(
-			 ^^T, std::meta::access_context::current())) {
+	for (auto member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::current())) {
 		if (std::meta::type_of(member) != ^^float) {
 			return false;
 		}
@@ -55,18 +53,13 @@ consteval auto all_members_are_float() -> bool {
 
 export using MotionVector = decltype(Particle::position);
 
-static_assert(
-	std::same_as<decltype(Particle::position), decltype(Particle::velocity)>,
-	"position and velocity must have identical structural types");
+static_assert(std::same_as<decltype(Particle::position), decltype(Particle::velocity)>,
+              "position and velocity must have identical structural types");
 
-static_assert(
-	member_count<Particle>() == 2,
-	"Particle's integration contract changed; "
-	"update the integrator deliberately");
+static_assert(member_count<Particle>() == 2, "Particle's integration contract changed; "
+                                             "update the integrator deliberately");
 
-static_assert(
-	all_members_are_float<MotionVector>(),
-	"the SIMD kernels require float vector components");
+static_assert(all_members_are_float<MotionVector>(), "the SIMD kernels require float vector components");
 
 export constexpr auto axis_count = member_count<MotionVector>();
 
@@ -92,11 +85,9 @@ struct SoaStorage {
 		std::vector<std::meta::info> specs;
 		auto ctx = std::meta::access_context::current();
 		for (auto member : std::meta::nonstatic_data_members_of(^^T, ctx)) {
-			auto array_type = std::meta::substitute(
-				^^std::array,
-				{std::meta::type_of(member), std::meta::reflect_constant(N)});
-			specs.push_back(std::meta::data_member_spec(
-				array_type, {.name = std::meta::identifier_of(member)}));
+			auto array_type = std::meta::substitute(^^std::array, {
+			                                                          std::meta::type_of(member), std::meta::reflect_constant(N)});
+			specs.push_back(std::meta::data_member_spec(array_type, {.name = std::meta::identifier_of(member)}));
 		}
 		std::meta::define_aggregate(^^type, specs);
 	}
@@ -115,9 +106,7 @@ struct KinematicSoa {
 	using position_type = std::remove_cvref_t<decltype(std::declval<P&>().position)>;
 	using velocity_type = std::remove_cvref_t<decltype(std::declval<P&>().velocity)>;
 
-	static_assert(
-		std::same_as<position_type, velocity_type>,
-		"position and velocity shapes diverged");
+	static_assert(std::same_as<position_type, velocity_type>, "position and velocity shapes diverged");
 
 	using vector_storage = soa_t<position_type, N>;
 
@@ -130,9 +119,7 @@ export using ParticleSoa = KinematicSoa<Particle, soa_capacity>;
 // Compile-time law: the derived storage is dense — each half is exactly its
 // axis arrays laid end to end, with no padding. The slab kernels in unsafe/
 // rely on this adjacency.
-static_assert(
-	sizeof(ParticleSoa) == sizeof(float) * 2 * axis_count * soa_capacity,
-	"SoA storage must be dense");
+static_assert(sizeof(ParticleSoa) == sizeof(float) * 2 * axis_count * soa_capacity, "SoA storage must be dense");
 
 // ============================================================
 // Reflection-derived access.
@@ -157,11 +144,8 @@ auto storage_spans(Storage& storage, std::size_t count) -> AxisSpans {
 	static_assert(member_count<Storage>() == axis_count);
 	auto spans = AxisSpans{};
 	auto index = std::size_t{0};
-	template for (
-		constexpr auto member :
-		std::define_static_array(std::meta::nonstatic_data_members_of(
-			^^Storage, std::meta::access_context::current()))
-	) {
+	template for (constexpr auto member :
+	              std::define_static_array(std::meta::nonstatic_data_members_of(^^Storage, std::meta::access_context::current()))) {
 		spans[index] = std::span{storage.[:member:]}.first(count);
 		++index;
 	}
@@ -171,8 +155,8 @@ auto storage_spans(Storage& storage, std::size_t count) -> AxisSpans {
 export auto field_spans(ParticleSoa& soa, std::size_t count) -> KinematicView {
 	contract_assert(count <= soa_capacity);
 	return KinematicView{
-		.position = storage_spans(soa.position, count),
-		.velocity = storage_spans(soa.velocity, count),
+	    .position = storage_spans(soa.position, count),
+	    .velocity = storage_spans(soa.velocity, count),
 	};
 }
 

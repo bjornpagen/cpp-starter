@@ -26,8 +26,7 @@ constexpr void for_each_axis_impl(F&& f, std::index_sequence<I...>) {
 
 template<class F>
 constexpr void for_each_axis(F&& f) {
-	for_each_axis_impl(std::forward<F>(f),
-		std::make_index_sequence<axis_count>{});
+	for_each_axis_impl(std::forward<F>(f), std::make_index_sequence<axis_count>{});
 }
 
 } // namespace
@@ -36,10 +35,8 @@ auto sve_kernel_available() noexcept -> bool {
 	return true;
 }
 
-auto sve_kernel(std::array<float*, 3> const& positions,
-	std::array<float const*, 3> const& velocities, std::size_t count,
-	float dt) noexcept -> void
-{
+auto sve_kernel(std::array<float*, 3> const& positions, std::array<float const*, 3> const& velocities, std::size_t count, float dt) noexcept
+    -> void {
 	svfloat32_t const vdt = svdup_f32(dt);
 	std::size_t i = 0;
 	while (i < count) {

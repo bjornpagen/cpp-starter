@@ -12,16 +12,15 @@ using Greeting = std::expected<std::string, starter::GreetError>;
 
 auto check_greeting_formats_name() -> CaseResult {
 	return CaseResult{
-		.name = "greeting formats the given name",
-		.passed = starter::greeting("modules") == Greeting{"hello, modules"},
+	    .name = "greeting formats the given name",
+	    .passed = starter::greeting("modules") == Greeting{"hello, modules"},
 	};
 }
 
 auto check_greeting_rejects_empty_name() -> CaseResult {
 	return CaseResult{
-		.name = "greeting rejects an empty name",
-		.passed = starter::greeting("")
-			== std::unexpected(starter::GreetError::EmptyName),
+	    .name = "greeting rejects an empty name",
+	    .passed = starter::greeting("") == std::unexpected(starter::GreetError::EmptyName),
 	};
 }
 
@@ -29,8 +28,8 @@ auto check_greeting_rejects_empty_name() -> CaseResult {
 
 auto main() -> int {
 	auto const results = std::array{
-		check_greeting_formats_name(),
-		check_greeting_rejects_empty_name(),
+	    check_greeting_formats_name(),
+	    check_greeting_rejects_empty_name(),
 	};
 
 	auto failures = std::size_t{0};

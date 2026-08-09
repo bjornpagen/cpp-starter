@@ -8,9 +8,7 @@ export enum class GreetError {
 	EmptyName,
 };
 
-export auto greeting(std::string_view name)
-	-> std::expected<std::string, GreetError>
-{
+export auto greeting(std::string_view name) -> std::expected<std::string, GreetError> {
 	if (name.empty()) {
 		return std::unexpected(GreetError::EmptyName);
 	}

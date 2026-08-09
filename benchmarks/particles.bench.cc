@@ -21,11 +21,9 @@ auto fill(starter::ParticleSoa& soa) -> void {
 	for (auto const axes : {view.position, view.velocity}) {
 		for (auto const axis : axes) {
 			for (auto& value : axis) {
-				state = state * std::uint64_t{6364136223846793005}
-					+ std::uint64_t{1442695040888963407};
+				state = state * std::uint64_t{6364136223846793005} + std::uint64_t{1442695040888963407};
 				auto const mantissa = static_cast<std::uint32_t>(state >> 40);
-				value = static_cast<float>(mantissa)
-					/ static_cast<float>(std::uint32_t{1} << 24) - 0.5f;
+				value = static_cast<float>(mantissa) / static_cast<float>(std::uint32_t{1} << 24) - 0.5f;
 			}
 		}
 	}
@@ -37,9 +35,7 @@ struct Measurement {
 };
 
 template<class Kernel>
-auto measure(std::string_view name, starter::ParticleSoa& soa, Kernel kernel)
-	-> Measurement
-{
+auto measure(std::string_view name, starter::ParticleSoa& soa, Kernel kernel) -> Measurement {
 	fill(soa);
 	auto const view = starter::field_spans(soa, starter::soa_capacity);
 	for (auto call = std::size_t{0}; call < warmup_calls; ++call) {
@@ -63,59 +59,50 @@ auto measure(std::string_view name, starter::ParticleSoa& soa, Kernel kernel)
 		}
 	}
 	auto const elements = static_cast<double>(starter::soa_capacity * starter::axis_count);
-	std::println("  {:<24} {:>8.1f} ns/step   {:>6.2f} Gelem/s   (checksum {:+.4f})",
-		name, best, elements / best, checksum);
+	std::println("  {:<24} {:>8.1f} ns/step   {:>6.2f} Gelem/s   (checksum {:+.4f})", name, best, elements / best, checksum);
 	return Measurement{.name = name, .ns_per_call = best};
 }
 
 } // namespace
 
 auto main() -> int {
-	std::println(
-		"particle integration: {} particles x {} axes, {} calls x {} repetitions",
-		starter::soa_capacity, starter::axis_count, timed_calls, repetitions);
+	std::println("particle integration: {} particles x {} axes, {} calls x {} repetitions", starter::soa_capacity, starter::axis_count,
+	             timed_calls, repetitions);
 
 	auto soa = starter::ParticleSoa{};
 	auto results = std::inplace_vector<Measurement, 5>{};
 
-	results.push_back(measure("loop (autovectorized)", soa,
-		[](starter::KinematicView const& view, float step) {
-			starter::integrate_loop(view, step);
-		}));
-	results.push_back(measure("std::experimental::simd", soa,
-		[](starter::KinematicView const& view, float step) {
-			starter::integrate_stdsimd(view, step);
-		}));
+	results.push_back(measure("loop (autovectorized)", soa, [](starter::KinematicView const& view, float step) {
+		starter::integrate_loop(view, step);
+	}));
+	results.push_back(measure("std::experimental::simd", soa, [](starter::KinematicView const& view, float step) {
+		starter::integrate_stdsimd(view, step);
+	}));
 	if (starter::neon_available()) {
-		results.push_back(measure("neon intrinsics", soa,
-			[](starter::KinematicView const& view, float step) {
-				starter::integrate_neon(view, step);
-			}));
-		results.push_back(measure("neon x4 dense slab", soa,
-			[](starter::KinematicView const& view, float step) {
-				starter::integrate_neon_slab(view, step);
-			}));
+		results.push_back(measure("neon intrinsics", soa, [](starter::KinematicView const& view, float step) {
+			starter::integrate_neon(view, step);
+		}));
+		results.push_back(measure("neon x4 dense slab", soa, [](starter::KinematicView const& view, float step) {
+			starter::integrate_neon_slab(view, step);
+		}));
 	} else {
-		std::println("  {:<24} skipped: not available on this target",
-			"neon intrinsics");
+		std::println("  {:<24} skipped: not available on this target", "neon intrinsics");
 	}
 	if (starter::sve_available()) {
-		results.push_back(measure("sve intrinsics", soa,
-			[](starter::KinematicView const& view, float step) {
-				starter::integrate_sve(view, step);
-			}));
+		results.push_back(measure("sve intrinsics", soa, [](starter::KinematicView const& view, float step) {
+			starter::integrate_sve(view, step);
+		}));
 	} else {
-		std::println("  {:<24} skipped: not available on this target",
-			"sve intrinsics");
+		std::println("  {:<24} skipped: not available on this target", "sve intrinsics");
 	}
 
-	auto const fastest = std::ranges::min_element(results, std::ranges::less{},
-		[](Measurement const& m) { return m.ns_per_call; });
+	auto const fastest = std::ranges::min_element(results, std::ranges::less{}, [](Measurement const& m) {
+		return m.ns_per_call;
+	});
 
 	std::println("\nfastest: {}", fastest->name);
 	for (auto const& result : results) {
-		std::println("  {:<24} {:>5.2f}x",
-			result.name, result.ns_per_call / fastest->ns_per_call);
+		std::println("  {:<24} {:>5.2f}x", result.name, result.ns_per_call / fastest->ns_per_call);
 	}
 	return 0;
 }

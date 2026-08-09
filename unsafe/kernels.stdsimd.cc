@@ -22,16 +22,13 @@ constexpr void for_each_axis_impl(F&& f, std::index_sequence<I...>) {
 
 template<class F>
 constexpr void for_each_axis(F&& f) {
-	for_each_axis_impl(std::forward<F>(f),
-		std::make_index_sequence<axis_count>{});
+	for_each_axis_impl(std::forward<F>(f), std::make_index_sequence<axis_count>{});
 }
 
 } // namespace
 
-auto stdsimd_kernel(std::array<float*, 3> const& positions,
-	std::array<float const*, 3> const& velocities, std::size_t count,
-	float dt) noexcept -> void
-{
+auto stdsimd_kernel(std::array<float*, 3> const& positions, std::array<float const*, 3> const& velocities, std::size_t count,
+                    float dt) noexcept -> void {
 	using vecf = stdx::native_simd<float>;
 	vecf const vdt = dt;
 	constexpr std::size_t width = vecf::size();

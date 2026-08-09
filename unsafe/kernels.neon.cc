@@ -22,16 +22,13 @@ constexpr void for_each_axis_impl(F&& f, std::index_sequence<I...>) {
 
 template<class F>
 constexpr void for_each_axis(F&& f) {
-	for_each_axis_impl(std::forward<F>(f),
-		std::make_index_sequence<axis_count>{});
+	for_each_axis_impl(std::forward<F>(f), std::make_index_sequence<axis_count>{});
 }
 
 // One x4-unrolled fused-multiply-add pass over a contiguous run. 16 elements
 // per iteration keeps four independent FMA chains in flight and lets the
 // 64-byte structured loads/stores saturate the load/store ports.
-void fma_run_x4(float* __restrict positions, float const* __restrict velocities,
-	std::size_t total, float dt) noexcept
-{
+void fma_run_x4(float* __restrict positions, float const* __restrict velocities, std::size_t total, float dt) noexcept {
 	float32x4_t const vdt = vdupq_n_f32(dt);
 	std::size_t i = 0;
 	for (; i + 16 <= total; i += 16) {
@@ -55,10 +52,8 @@ auto neon_kernel_available() noexcept -> bool {
 	return true;
 }
 
-auto neon_kernel(std::array<float*, 3> const& positions,
-	std::array<float const*, 3> const& velocities, std::size_t count,
-	float dt) noexcept -> void
-{
+auto neon_kernel(std::array<float*, 3> const& positions, std::array<float const*, 3> const& velocities, std::size_t count,
+                 float dt) noexcept -> void {
 	float32x4_t const vdt = vdupq_n_f32(dt);
 	std::size_t i = 0;
 	for (; i + 4 <= count; i += 4) {
@@ -76,19 +71,15 @@ auto neon_kernel(std::array<float*, 3> const& positions,
 	}
 }
 
-auto neon_slab_kernel(std::array<float*, 3> const& positions,
-	std::array<float const*, 3> const& velocities, std::size_t count,
-	float dt) noexcept -> void
-{
+auto neon_slab_kernel(std::array<float*, 3> const& positions, std::array<float const*, 3> const& velocities, std::size_t count,
+                      float dt) noexcept -> void {
 	// Dense-slab fast path: the derived storage lays each half's axis arrays
 	// end to end (a static_assert'd law of the :particles partition), so when the
 	// view covers the full capacity the axis pointers are adjacent and all
 	// axes stream through one fused pass. The cross-array pointer arithmetic
 	// this implies is exactly what this quarantine exists for.
-	bool const dense = positions[1] == positions[0] + count
-		&& positions[2] == positions[1] + count
-		&& velocities[1] == velocities[0] + count
-		&& velocities[2] == velocities[1] + count;
+	bool const dense = positions[1] == positions[0] + count && positions[2] == positions[1] + count &&
+	                   velocities[1] == velocities[0] + count && velocities[2] == velocities[1] + count;
 	if (dense) {
 		fma_run_x4(positions[0], velocities[0], axis_count * count, dt);
 		return;
