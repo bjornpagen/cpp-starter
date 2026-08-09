@@ -61,8 +61,9 @@ if(NOT STARTER_LINT_GRAPH)
 	# Reflection is not negotiable: the version gate above guarantees GCC
 	# 16.1.x, which implements it.
 	string(APPEND CMAKE_CXX_FLAGS " -freflection")
-	# Contracts (P2900): handle_contract_violation links from libstdc++exp.
-	string(APPEND CMAKE_EXE_LINKER_FLAGS " -lstdc++exp")
+	# Contracts (P2900) linkage moved to the language-profile target below:
+	# GNU ld resolves left-to-right and CMAKE_EXE_LINKER_FLAGS precede the
+	# object files, so the -l flag spelling satisfies nothing on Linux.
 endif()
 
 # ----------------------------------------------------------------------------
@@ -72,6 +73,13 @@ endif()
 add_library(starter_language_profile INTERFACE)
 
 target_compile_features(starter_language_profile INTERFACE cxx_std_26)
+
+if(NOT STARTER_LINT_GRAPH)
+	# Contracts (P2900): handle_contract_violation lives in libstdc++exp.
+	# Linked as an interface library so it lands AFTER the object files on
+	# the link line — GNU ld resolves left-to-right; macOS ld64 masked this.
+	target_link_libraries(starter_language_profile INTERFACE stdc++exp)
+endif()
 
 # -fno-exceptions / -fno-rtti are global (see CMAKE_CXX_FLAGS above): they
 # must also apply to the CMake-synthesized std module compilation.
