@@ -1,0 +1,239 @@
+# Vanilla-Linux evidence for the upstream/ GCC submissions. Everything in
+# upstream/ was verified on the darwin-arm64 toolchain built from patched
+# sources (an out-of-tree port); GCC policy wants reproduction on official
+# FSF builds and, for the fixincludes patch, a full bootstrap + testsuite on
+# at least one target (gcc.gnu.org/contribute.html). Three independent jobs,
+# workflow_dispatch only:
+#
+#   ice-vanilla-16   — fast. Both ICE repro sets against the Docker library
+#                      gcc:16.1.0 image (unpatched FSF release build) on
+#                      amd64 and arm64. Expectations are INVERTED: a step
+#                      passes when the compiler ICEs. The verbatim compiler
+#                      output in the log is the Bugzilla evidence.
+#   trunk-quick      — ~60-90 min. Shallow trunk clone + the fixincludes
+#                      patch: standalone fixincludes make check (autogen
+#                      available this time), then a --disable-bootstrap
+#                      c,c++ build and both repro sets against trunk g++
+#                      (informational: ICE-still-present vs fixed-on-trunk).
+#   bootstrap-regtest — long (up to the 6h job limit). Patched trunk, full
+#                      3-stage bootstrap of the default languages, make -k
+#                      check, contrib/test_summary + .sum files as artifact.
+#                      This is the contribute.html testing-policy evidence.
+#
+# gcc:16.1.0 amd64+arm64 images verified via the Docker Hub API on
+# 2026-08-09 (the tag did not exist when ci.yml was authored).
+
+name: upstream-verify
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ice-vanilla-16:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: gcc:16.1.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: compiler identity (${{ matrix.arch }})
+        run: |
+          g++ --version
+          g++ -dumpmachine
+
+      # Inverted expectations: expect_ice PASSES only when the compile dies
+      # with 'internal compiler error' in its output; a clean compile means
+      # the bug does not reproduce on this FSF build and the step FAILS.
+      - name: 'repro: modules defaulted hidden-friend operator== (a.cc ok, b.cc ICE)'
+        shell: bash
+        run: |
+          expect_ok() {
+            echo "+ $*"
+            local rc=0; "$@" >out.log 2>&1 || rc=$?
+            cat out.log
+            if [ "$rc" -ne 0 ]; then
+              echo "UNEXPECTED: exit $rc — this TU must compile cleanly"; return 1
+            fi
+            echo "OK: compiled cleanly (expected)"
+          }
+          expect_ice() {
+            echo "+ $*"
+            local rc=0; "$@" >out.log 2>&1 || rc=$?
+            cat out.log
+            if [ "$rc" -eq 0 ]; then
+              echo "UNEXPECTED: compiled cleanly — ICE did not reproduce on vanilla FSF ${{ matrix.arch }}"; return 1
+            fi
+            if grep -q 'internal compiler error' out.log; then
+              echo "VERDICT: ICE reproduced on vanilla FSF gcc 16.1.0 ${{ matrix.arch }} (exit $rc)"
+            else
+              echo "UNEXPECTED: compile failed (exit $rc) but with no 'internal compiler error'"; return 1
+            fi
+          }
+          cd upstream/gcc-ice-modules-defaulted-friend-eq
+          expect_ok  g++ -std=c++26 -fmodules -c a.cc
+          expect_ice g++ -std=c++26 -fmodules -c b.cc
+
+      - name: 'repro: GMF extern-then-inline-constexpr redecl (both TUs ICE)'
+        shell: bash
+        run: |
+          expect_ice() {
+            echo "+ $*"
+            local rc=0; "$@" >out.log 2>&1 || rc=$?
+            cat out.log
+            if [ "$rc" -eq 0 ]; then
+              echo "UNEXPECTED: compiled cleanly — ICE did not reproduce on vanilla FSF ${{ matrix.arch }}"; return 1
+            fi
+            if grep -q 'internal compiler error' out.log; then
+              echo "VERDICT: ICE reproduced on vanilla FSF gcc 16.1.0 ${{ matrix.arch }} (exit $rc)"
+            else
+              echo "UNEXPECTED: compile failed (exit $rc) but with no 'internal compiler error'"; return 1
+            fi
+          }
+          cd upstream/gcc-ice-gmf-consteval-redecl
+          expect_ice g++ -std=c++26 -fmodules -c repro.cc
+          rm -rf gcm.cache
+          expect_ice g++ -std=c++26 -fmodules -c repro-include.cc
+
+  trunk-quick:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison libgmp-dev \
+            libmpfr-dev libmpc-dev libisl-dev libzstd-dev autogen dejagnu
+
+      - name: shallow-clone gcc master
+        run: |
+          git clone --depth=1 https://github.com/gcc-mirror/gcc.git "$RUNNER_TEMP/gcc"
+          git -C "$RUNNER_TEMP/gcc" log -1 --format='trunk @ %H (%cd)' --date=short
+
+      # git apply, not am: the clone is shallow and we only need the tree
+      # state, not the commit.
+      - name: apply fixincludes patch
+        run: |
+          cd "$RUNNER_TEMP/gcc"
+          git apply --stat --apply "$GITHUB_WORKSPACE"/upstream/gcc-fixincludes-darwin-rsize-t/0001-*.patch
+          git status --short
+
+      # Standalone out-of-tree fixincludes check, with autogen present this
+      # time. libiberty is built as a sibling first because the fixincludes
+      # Makefile links ../libiberty/libiberty.a.
+      - name: fixincludes standalone make check
+        run: |
+          set -x
+          mkdir -p "$RUNNER_TEMP/obj/libiberty" "$RUNNER_TEMP/obj/fixincludes"
+          cd "$RUNNER_TEMP/obj/libiberty"
+          "$RUNNER_TEMP/gcc/libiberty/configure"
+          make -j"$(nproc)"
+          cd "$RUNNER_TEMP/obj/fixincludes"
+          "$RUNNER_TEMP/gcc/fixincludes/configure"
+          make
+          make check 2>&1 | tee "$RUNNER_TEMP/fixincludes-check.log"
+
+      - name: build patched trunk (--disable-bootstrap, c/c++)
+        run: |
+          mkdir -p "$RUNNER_TEMP/obj-gcc"
+          cd "$RUNNER_TEMP/obj-gcc"
+          "$RUNNER_TEMP/gcc/configure" \
+            --prefix="$RUNNER_TEMP/gcc-install" \
+            --disable-bootstrap \
+            --enable-languages=c,c++ \
+            --disable-multilib
+          make -j"$(nproc)"
+          make install
+
+      # Informational, never fails the job: reports ICE-still-present or
+      # fixed-on-trunk per repro so the Bugzilla text can say which.
+      - name: run ICE repros against trunk g++
+        shell: bash
+        run: |
+          export PATH="$RUNNER_TEMP/gcc-install/bin:$PATH"
+          g++ --version
+          verdict() {
+            local name="$1"; shift
+            echo "=== $name: $*"
+            local rc=0; "$@" >out.log 2>&1 || rc=$?
+            cat out.log
+            if [ "$rc" -eq 0 ]; then
+              echo "VERDICT[$name]: fixed-on-trunk (compiled cleanly)"
+            elif grep -q 'internal compiler error' out.log; then
+              echo "VERDICT[$name]: ICE-still-present on trunk (exit $rc)"
+            else
+              echo "VERDICT[$name]: rejected on trunk without ICE (exit $rc) — inspect output above"
+            fi
+          }
+          cd "$GITHUB_WORKSPACE/upstream/gcc-ice-modules-defaulted-friend-eq"
+          verdict friend-eq-a  g++ -std=c++26 -fmodules -c a.cc
+          verdict friend-eq-b  g++ -std=c++26 -fmodules -c b.cc
+          cd "$GITHUB_WORKSPACE/upstream/gcc-ice-gmf-consteval-redecl"
+          verdict gmf-repro    g++ -std=c++26 -fmodules -c repro.cc
+          rm -rf gcm.cache
+          verdict gmf-include  g++ -std=c++26 -fmodules -c repro-include.cc
+
+  bootstrap-regtest:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison libgmp-dev \
+            libmpfr-dev libmpc-dev libisl-dev libzstd-dev autogen dejagnu
+
+      - name: shallow-clone gcc master
+        run: |
+          git clone --depth=1 https://github.com/gcc-mirror/gcc.git "$RUNNER_TEMP/gcc"
+          git -C "$RUNNER_TEMP/gcc" log -1 --format='trunk @ %H (%cd)' --date=short
+
+      - name: apply fixincludes patch
+        run: |
+          cd "$RUNNER_TEMP/gcc"
+          git apply --stat --apply "$GITHUB_WORKSPACE"/upstream/gcc-fixincludes-darwin-rsize-t/0001-*.patch
+          git status --short
+
+      # Full 3-stage bootstrap, default languages (no --enable-languages,
+      # no --disable-bootstrap): the contribute.html testing baseline.
+      - name: bootstrap patched trunk
+        run: |
+          mkdir -p "$RUNNER_TEMP/obj-boot"
+          cd "$RUNNER_TEMP/obj-boot"
+          "$RUNNER_TEMP/gcc/configure" \
+            --prefix="$RUNNER_TEMP/gcc-install" \
+            --disable-multilib
+          make -j"$(nproc)"
+
+      - name: run testsuite (make -k check)
+        run: |
+          cd "$RUNNER_TEMP/obj-boot"
+          make -k check -j"$(nproc)" || true
+
+      - name: contrib/test_summary
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/obj-boot"
+          "$RUNNER_TEMP/gcc/contrib/test_summary" | tee test_summary.txt || true
+          find . -name '*.sum' -print
+
+      - name: upload testsuite results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-regtest-results
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/obj-boot/test_summary.txt
+            ${{ runner.temp }}/obj-boot/**/*.sum
