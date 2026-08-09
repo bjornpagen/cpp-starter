@@ -1,6 +1,6 @@
 # The :exec partition is the dialect-clean execution surface; it is still a
 # partition of the single starter module target defined in src/CMakeLists.txt
-# (same arrangement as unsafe/'s :simd).
+# (same arrangement as unsafe/'s :net).
 target_sources(starter_module
 	PUBLIC
 		FILE_SET CXX_MODULES

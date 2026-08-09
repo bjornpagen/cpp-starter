@@ -17,16 +17,18 @@
 // patchable. Consequence: sender composition cannot cross the module
 // boundary on this toolchain — only concrete function surfaces do. The
 // :exec partition (foreign/exec.cc) reaches these definitions through the
-// same extern "C++" narrow ABI the :simd partition uses for its kernels.
+// same extern "C++" narrow ABI the :net partition uses for its io-context.
 // Re-verify with the pinned micro-repro on every toolchain bump.
 //
 // `namespace ex` re-exports EXACTLY the probe-verified subset of the
 // vocabulary, plus OUR expected-erroring wait. stdexec::sync_wait is
-// deliberately absent: under -fno-exceptions its error channel is lossy —
-// set_error(E) is routed through std::make_exception_ptr, which returns a
-// null exception_ptr in libstdc++ exceptions-off builds, so every typed
-// error silently collapses into the nullopt/stopped result. ours::wait
-// preserves the typed error in std::expected instead.
+// deliberately absent. The pinned fork already fixes its worst behavior
+// (upstream sync_wait silently misreported typed errors as stopped under
+// -fno-exceptions; the fork terminates instead — submitted upstream as
+// github.com/NVIDIA/stdexec/pull/2168). Terminate-on-error is safe but
+// still not this dialect's error algebra: errors are values (AGENTS.md
+// §11), and ours::wait returns them as std::expected, which sync_wait's
+// specified optional<tuple> shape cannot.
 #include <cstdint>
 #include <exception>
 #include <expected>

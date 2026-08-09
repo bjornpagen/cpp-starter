@@ -9,9 +9,9 @@
 // textually included in ANY module unit (global-module-fragment CPO pattern,
 // pinned in foreign/exec.backend.cc), so senders cannot cross the module
 // boundary on this toolchain. The :net partition (unsafe/net.cc) reaches
-// this machinery through the same extern "C++" narrow ABI the :simd and
-// :exec partitions use, and what crosses is concrete: an opaque Server
-// handle plus scalar-and-fn-pointer entry points.
+// this machinery through the same extern "C++" narrow ABI the :exec
+// partition uses, and what crosses is concrete: an opaque Server handle
+// plus scalar-and-fn-pointer entry points.
 //
 // Concurrency model: thread-per-core share-nothing. Each worker owns its
 // OWN kqueue reactor (Ctx); the ONE shared nonblocking listener is armed in

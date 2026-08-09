@@ -3,7 +3,7 @@
 // CMakeLists.txt). The exported interface is dialect-clean; every sender
 // composition lives in exec.backend.cc — the combinator half of the swap
 // boundary (AGENTS.md §15) — and is reached through a narrow ABI, exactly
-// like the :simd partition reaches its intrinsic kernels.
+// like the :net partition reaches its kqueue io-context.
 //
 // Why the boundary is shaped this way: GCC 16.1 ICEs whenever a stdexec
 // header is textually included in ANY module unit (global-module-fragment
@@ -27,7 +27,7 @@ import std;
 
 // Narrow ABI to the swap-boundary TU: the extern "C++" block attaches these
 // declarations to the global module, matching the plain definitions in
-// exec.backend.cc (same mechanism and rationale as :simd's kernels).
+// exec.backend.cc (same mechanism and rationale as :net's io-context).
 extern "C++" {
 namespace starter::exec_backend {
 

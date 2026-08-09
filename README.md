@@ -1,7 +1,9 @@
 # cpp-starter
 
-A starter template for a deliberately small C++26 dialect: modules-only,
-exception-free, RTTI-free, structural, value-oriented, reflection-driven.
+A starter template for a deliberately small C++26 dialect — modules-only,
+exception-free, RTTI-free, structural, value-oriented, reflection-driven —
+whose flagship is a working **multicore HTTP server built on sender/receiver
+(`std::execution`)**, years before the standard library ships it.
 
 **`AGENTS.md` is the normative document** for humans and coding agents. When
 this repository offers one mechanism for a concept, the alternatives are
@@ -23,20 +25,33 @@ Tools are referenced by bare name and found on `PATH`. If yours live
 elsewhere, write a gitignored `CMakeUserPresets.json` that inherits a preset
 and overrides `CMAKE_CXX_COMPILER` (CMake merges it automatically).
 
-## Build
+## The server
 
 ```sh
 cmake --preset dev
 cmake --build --preset dev
-ctest --preset dev
-./build/dev/src/starter
+./build/dev/examples/starter_httpd    # binds an ephemeral port, prints "listening <port>"
+curl localhost:<port>/hello           # responses carry the worker id — watch it
+curl localhost:<port>/hello           # spread across cores under concurrent load
+```
+
+Thread-per-core, share-nothing: N workers, each owning its own kqueue
+io-context and its own `SO_REUSEPORT` listener; per-connection accept →
+read → parse → respond, composed as senders; zero cross-worker state, zero
+locks outside the vendored thread pool; clean SIGINT shutdown. The HTTP/1.1
+parser is pure dialect (`string_view` in, `expected` out).
+
+## Build and test
+
+```sh
+cmake --preset dev && cmake --build --preset dev && ctest --preset dev
 ```
 
 | Preset | Purpose |
 |---|---|
 | `dev` | debug development build |
 | `release` | optimized production build |
-| `asan-ubsan` | AddressSanitizer + UndefinedBehaviorSanitizer |
+| `asan-ubsan` | AddressSanitizer + UndefinedBehaviorSanitizer (the httpd smoke runs under it) |
 | `tsan` | ThreadSanitizer (never combined with ASan); Linux only — GCC ships no TSan runtime on arm64 macOS |
 | `lint` | Clang graph over the Clang-parseable remainder (the starter module is GCC-only as a unit); clang-tidy runs during the build and any warning is an error |
 
@@ -48,29 +63,31 @@ export surface — partitions cannot be imported from outside the module.
 
 ```text
 src/        the starter module: primary interface + dialect partitions
-            (:core, :enums, :particles, :http — the HTTP/1.1 parser/writer)
+            (:core, :enums, :http — the HTTP/1.1 parser/writer)
 tests/      dialect tests (module-native minimal harness, no macro frameworks)
 foreign/    quarantined external-interface adaptation (headers allowed);
             holds the :exec partition and the combinator half of the
             stdexec swap boundary (exec.backend.cc)
-unsafe/     quarantined machine primitives; holds the :simd partition and
-            the intrinsic kernel TUs, plus the :net partition and the I/O
-            half of the swap boundary (net.backend.cc — kqueue io-context)
+unsafe/     quarantined machine primitives; holds the :net partition and
+            the I/O half of the swap boundary (net.backend.cc — the kqueue
+            io-context)
 examples/   dialect example executables (httpd: thread-per-core
             share-nothing HTTP server over :net + :http)
-benchmarks/ dialect benchmark executables (GCC graph only, never in CI gates)
 ```
 
 ## Async
 
 Sender/receiver (`std::execution`, P2300) is the only async algebra, active
 today via the reference implementation (NVIDIA stdexec) pinned by SHA at
-configure time and quarantined behind exactly one swap boundary spelled
-across two plain TUs: `foreign/exec.backend.cc` (combinator half)
+configure time — consumed from the maintained fork
+(github.com/bjornpagen/stdexec), whose every commit is an
+individually-submitted upstream fix (currently NVIDIA/stdexec#2167 and
+NVIDIA/stdexec#2168) — and quarantined behind exactly one swap boundary
+spelled across two plain TUs: `foreign/exec.backend.cc` (combinator half)
 re-exports the verified combinator subset as `namespace ex` plus an
-expected-erroring `wait` (never `sync_wait`, whose typed-error channel is
-lossy under `-fno-exceptions`), and `unsafe/net.backend.cc` (I/O half)
-composes the kqueue io-context's readiness senders. The `starter:exec` and
+expected-erroring `wait` (never `sync_wait`: the dialect's errors are
+values, not termination), and `unsafe/net.backend.cc` (I/O half) composes
+the kqueue io-context's readiness senders. The `starter:exec` and
 `starter:net` partitions export the dialect-clean surfaces over a narrow
 ABI (GCC 16.1 ICEs on stdexec headers in any module unit, so senders never
 cross the module boundary). No other file may touch stdexec; when libstdc++
@@ -86,45 +103,8 @@ Enforcement lives in the compiler and the build, not in scripts:
 - **the build graph** — `cmake --build --preset dev` (any warning is an error)
 - **clang-tidy** — `cmake --build --preset lint` runs it over the
   Clang-readable graph during the build
-- **ctest** — `ctest --preset dev` runs the unit tests plus the
-  toolchain-conformance tests
-
-## Benchmarks
-
-`starter_particles_bench` times four integration kernels over the same
-reflection-derived SoA storage (the `:particles` partition in
-`src/particles.cc` derives the layout and the access from `Particle` via
-`define_aggregate`):
-
-```sh
-cmake --preset release
-cmake --build --preset release
-./build/release/benchmarks/starter_particles_bench
-```
-
-Kernel availability follows the build graph, not preprocessor conditionals:
-the NEON kernel is selected for aarch64 targets only, and the SVE kernel is
-built only with `-DSTARTER_SVE=ON` on a target that actually executes SVE —
-no supported development host does (Apple silicon has no SVE; CI is x86_64),
-so by default a stub reports it unavailable.
-
-Reference numbers, Apple M2 Max, GCC 16.1 release preset, 1024 particles:
-
-| Kernel | ns/step | relative |
-|---|---|---|
-| NEON x4 dense slab | ~178 | 1.00x |
-| plain loop (autovectorized) | ~284 | 1.60x |
-| NEON intrinsics (fused across axes) | ~365 | 2.05x |
-| `std::experimental::simd` | ~367 | 2.06x |
-| SVE intrinsics | not runnable on this hardware | — |
-
-The slab kernel wins by exploiting a compile-time law of the derived
-storage: each half's axis arrays are laid end to end, so a full-capacity
-view is one contiguous run and all axes stream through a single x4-unrolled
-pass (~3.7 of the core's 4 load/store slots per cycle — the L1 bandwidth
-ceiling for this access mix). Among the per-axis kernels the autovectorizer
-beats the hand-fused ones: its one-axis-at-a-time passes unroll into more
-independent NEON chains than one 4-lane operation per axis per iteration.
+- **ctest** — `ctest --preset dev` runs the unit tests, the httpd smoke,
+  plus the toolchain-conformance tests
 
 ## Known macOS toolchain issues
 
@@ -136,7 +116,8 @@ Documented, not automated — fixing your toolchain is your business:
   to compile — and libstdc++ **installs an empty `bits/std.cc` as a
   fallback**. Fix: drop a plain-typedef copy of `_rsize_t.h` into GCC's
   `include-fixed/sys/_types/` and rebuild libstdc++. Verify
-  `include/c++/<ver>/bits/std.cc` is ~113 KB, not 1 byte.
+  `include/c++/<ver>/bits/std.cc` is ~113 KB, not 1 byte. (Both halves are
+  ready to submit upstream; see `upstream/`.)
 - **MacPorts' `/opt/local/bin` clang wrappers break `clang-scan-deps`**
   (toolchain-root inference). Point a user preset at the real binaries in
   `/opt/local/libexec/llvm-22/bin` and set `CMAKE_CXX_STDLIB_MODULES_JSON`

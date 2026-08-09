@@ -5,9 +5,6 @@ export module starter;
 
 export import :core;
 export import :enums;
-export import :particles;
-export import :integrate;
-export import :simd;
 export import :exec;
 export import :http;
 export import :net;

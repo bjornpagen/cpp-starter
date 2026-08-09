@@ -2,9 +2,9 @@
 // exported interface is dialect-clean; every socket/kevent syscall and every
 // sender composition lives in the plain backend TU and is reached through
 // the extern "C++" narrow ABI below (same mechanism and rationale as the
-// :simd kernels and the :exec chains — the pinned GCC 16.1 ICEs when a
-// stdexec header appears in any module unit, so senders cannot cross the
-// module boundary; what crosses is the executable spec of the boundary).
+// :exec chains — the pinned GCC 16.1 ICEs when a stdexec header appears in
+// any module unit, so senders cannot cross the module boundary; what
+// crosses is the executable spec of the boundary).
 //
 // What the backend implements per worker: an owned kqueue reactor
 // (IoContext with run/stop) and readiness-completing senders async_accept /

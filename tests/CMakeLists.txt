@@ -38,21 +38,6 @@ set_source_files_properties(enums.test.cc PROPERTIES
 
 add_test(NAME starter.enums COMMAND starter_enums_tests)
 
-add_executable(starter_particles_tests)
-
-target_sources(starter_particles_tests
-	PRIVATE
-		particles.test.cc
-)
-
-target_link_libraries(starter_particles_tests
-	PRIVATE
-		starter_module
-		starter_language_profile
-)
-
-add_test(NAME starter.particles COMMAND starter_particles_tests)
-
 # Senders conformance: the runtime spec of the vendored execution boundary
 # (foreign/exec.cc + foreign/exec.backend.cc), driven through the exported
 # module surface only.

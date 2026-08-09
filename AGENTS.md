@@ -346,7 +346,7 @@ dialect code.
 
 The repository has two semantic zones.
 
-### 5.1 `src/`, `tests/`, and `benchmarks/`: dialect code
+### 5.1 `src/`, `tests/`, and `examples/`: dialect code
 
 All rules in this document apply.
 
@@ -467,7 +467,7 @@ Textual inclusion is forbidden in dialect code.
 ### Preprocessor
 
 Every preprocessing directive is forbidden in dialect code (`src/`, `tests/`,
-and `benchmarks/`), including:
+and `examples/`), including:
 
 ```text
 #include

@@ -95,10 +95,11 @@ target_compile_options(starter_language_profile INTERFACE
 
 # The starter module's partitions use C++26 reflection, which makes the
 # whole module GCC-only as a unit, and every executable here imports it. The
-# Clang lint graph covers only the Clang-parseable remainder — foreign/unsafe
-# TUs that import no module — and today that remainder is empty: the kernel
-# TUs use P2900 contract_assert, which the pinned Clang cannot parse. The
-# lint preset still enforces its toolchain gate and configure-time sanity.
+# Clang lint graph covers only the Clang-parseable remainder — and today
+# that remainder is empty: every TU either imports the starter module or is
+# one of the two swap-boundary backend TUs, which consume the vendored
+# stdexec headers that only this graph's targets may see. The lint preset
+# still enforces its toolchain gate and configure-time sanity.
 if(NOT STARTER_LINT_GRAPH)
 	# stdexec: the pinned std::execution reference implementation backing the
 	# sender/receiver dialect surface until libstdc++ ships __cpp_lib_senders
@@ -113,15 +114,17 @@ if(NOT STARTER_LINT_GRAPH)
 	#
 	#   fork      https://github.com/bjornpagen/stdexec  (branch: integration)
 	#   upstream  https://github.com/NVIDIA/stdexec
-	#   revision  0fb4c137536329fdd720ffc0c5ca737264f778b0  (2026-08-09)
+	#   revision  0d8cfba62800bbe6604c3325ec29291e256614d8  (2026-08-09)
 	#             = upstream fd60b20a
 	#             + fix(__spin_loop_pause): ill-formed 'inline inline' on the
 	#               ARM branch — hard GCC error on every arm build since
 	#               upstream f0e8ae6f; fix also gives the ALWAYS_INLINE macro
 	#               fallback branch a plain 'inline' so nvcc/NVHPC/EDG keep
 	#               inline linkage (their expansion was empty)
+	#               [submitted: github.com/NVIDIA/stdexec/pull/2167]
 	#             + fix(sync_wait): terminate instead of misreporting errors
 	#               as stopped when exceptions are unavailable
+	#               [submitted: github.com/NVIDIA/stdexec/pull/2168]
 	#
 	# Header-only consumption: SOURCE_SUBDIR points at include/, which has no
 	# CMakeLists.txt, so FetchContent_MakeAvailable populates the source tree
@@ -133,7 +136,7 @@ if(NOT STARTER_LINT_GRAPH)
 	include(FetchContent)
 	FetchContent_Declare(stdexec
 		GIT_REPOSITORY https://github.com/bjornpagen/stdexec.git
-		GIT_TAG 0fb4c137536329fdd720ffc0c5ca737264f778b0
+		GIT_TAG 0d8cfba62800bbe6604c3325ec29291e256614d8
 		SOURCE_SUBDIR include
 	)
 	FetchContent_MakeAvailable(stdexec)
@@ -141,7 +144,6 @@ if(NOT STARTER_LINT_GRAPH)
 	add_subdirectory(src)
 	add_subdirectory(unsafe)
 	add_subdirectory(foreign)
-	add_subdirectory(benchmarks)
 	add_subdirectory(examples)
 endif()
 
