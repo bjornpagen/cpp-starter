@@ -1,5 +1,5 @@
 import std;
-import starter.core;
+import starter;
 
 namespace {
 

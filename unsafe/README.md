@@ -7,7 +7,8 @@ memory primitive, and `reinterpret_cast` required by a boundary.
 
 Rules:
 
-- Every primitive must export a safe named-module interface upward.
+- Every primitive must export a safe module partition (or narrow ABI)
+  upward.
 - `std::mutex`, `std::atomic`, explicit memory orders, and friends are only
   legal here, and only to implement an approved abstraction (actor,
   serialized executor, arena, ...).

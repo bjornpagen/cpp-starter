@@ -38,16 +38,20 @@ ctest --preset dev
 | `release` | optimized production build |
 | `asan-ubsan` | AddressSanitizer + UndefinedBehaviorSanitizer |
 | `tsan` | ThreadSanitizer (never combined with ASan); Linux only — GCC ships no TSan runtime on arm64 macOS |
-| `lint` | reflection-free Clang graph; clang-tidy runs during the build and any warning is an error |
+| `lint` | Clang graph over the Clang-parseable remainder (the starter module is GCC-only as a unit); clang-tidy runs during the build and any warning is an error |
 
 ## Layout
 
+One named module (`starter`) per component; internals are partitions, one
+`.cc` file per concern. The primary interface (`src/starter.cc`) is the only
+export surface — partitions cannot be imported from outside the module.
+
 ```text
-src/        dialect code (modules only, all rules apply)
+src/        the starter module: primary interface + dialect partitions
 tests/      dialect tests (module-native minimal harness, no macro frameworks)
-meta/       GCC-only C++26 reflection modules (excluded from the lint graph)
 foreign/    quarantined external-interface adaptation (headers allowed)
-unsafe/     quarantined machine primitives (atomics, intrinsics, casts)
+unsafe/     quarantined machine primitives; holds the :simd partition and
+            the intrinsic kernel TUs
 benchmarks/ dialect benchmark executables (GCC graph only, never in CI gates)
 ```
 
@@ -66,8 +70,9 @@ Enforcement lives in the compiler and the build, not in scripts:
 ## Benchmarks
 
 `starter_particles_bench` times four integration kernels over the same
-reflection-derived SoA storage (`meta/starter.particles.cppm` derives the
-layout and the access from `Particle` via `define_aggregate`):
+reflection-derived SoA storage (the `:particles` partition in
+`src/particles.cc` derives the layout and the access from `Particle` via
+`define_aggregate`):
 
 ```sh
 cmake --preset release

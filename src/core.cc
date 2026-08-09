@@ -1,10 +1,14 @@
-module starter.core;
+export module starter:core;
 
 import std;
 
 namespace starter {
 
-auto greeting(std::string_view name)
+export enum class GreetError {
+	EmptyName,
+};
+
+export auto greeting(std::string_view name)
 	-> std::expected<std::string, GreetError>
 {
 	if (name.empty()) {

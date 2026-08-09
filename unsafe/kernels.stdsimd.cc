@@ -1,5 +1,5 @@
 // KERNEL 2: std::experimental::simd, fused across axes. Module-free TU:
-// see starter.simd.cpp for why the intrinsic bodies cannot import modules.
+// see simd.cc for why the intrinsic bodies cannot import modules.
 #include <array>
 #include <cstddef>
 #include <experimental/simd>

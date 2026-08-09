@@ -52,11 +52,6 @@ set(CMAKE_CXX_MODULE_STD ON)
 # global, not part of the language-profile target.
 string(APPEND CMAKE_CXX_FLAGS " -fno-exceptions -fno-rtti")
 
-# Function-local statics are banned by the dialect, so the thread-safe
-# initialization guards GCC emits for them are dead machinery; drop them so
-# the runtime matches the rulebook.
-string(APPEND CMAKE_CXX_FLAGS " -fno-threadsafe-statics")
-
 if(NOT STARTER_LINT_GRAPH)
 	# Reflection is not negotiable: the version gate above guarantees GCC
 	# 16.1.x, which implements it.
@@ -98,19 +93,22 @@ target_compile_options(starter_language_profile INTERFACE
 	"$<$<CXX_COMPILER_ID:GNU>:-Wuseless-cast;-Wduplicated-branches;-Wduplicated-cond;-Wlogical-op>"
 )
 
-add_subdirectory(src)
-
-# meta/ holds GCC-only reflection modules; it is never part of the lint
-# graph. unsafe/ quarantines the intrinsic kernel bodies and imports meta/
-# modules, so it is likewise GCC-only, and the benchmarks import both.
+# The starter module's partitions use C++26 reflection, which makes the
+# whole module GCC-only as a unit, and every executable here imports it. The
+# Clang lint graph covers only the Clang-parseable remainder — foreign/unsafe
+# TUs that import no module — and today that remainder is empty: the kernel
+# TUs use P2900 contract_assert, which the pinned Clang cannot parse. The
+# lint preset still enforces its toolchain gate and configure-time sanity.
 if(NOT STARTER_LINT_GRAPH)
-	add_subdirectory(meta)
+	add_subdirectory(src)
 	add_subdirectory(unsafe)
 	add_subdirectory(benchmarks)
 endif()
 
 enable_testing()
-add_subdirectory(tests)
+if(NOT STARTER_LINT_GRAPH)
+	add_subdirectory(tests)
+endif()
 
 # The CMake-internal target that builds the standard-library module is not
 # project code: clang-tidy must not run over it, and it must be compiled as

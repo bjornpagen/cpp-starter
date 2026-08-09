@@ -1,6 +1,6 @@
 // KERNEL 4: raw SVE intrinsics — vector-length agnostic; predication
 // handles the tail, so there is no scalar epilogue. Module-free TU: see
-// starter.simd.cpp for why the intrinsic bodies cannot import modules.
+// simd.cc for why the intrinsic bodies cannot import modules.
 // Selected by the build graph only when STARTER_SVE=ON: compiling this unit
 // requires an SVE-enabled -march, and calling the kernel requires hardware
 // that executes SVE (no Apple silicon does).

@@ -1,7 +1,5 @@
 import std;
-import starter.particles;
-import starter.integrate;
-import starter.simd;
+import starter;
 
 namespace {
 

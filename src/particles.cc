@@ -1,4 +1,4 @@
-export module starter.particles;
+export module starter:particles;
 
 import std;
 

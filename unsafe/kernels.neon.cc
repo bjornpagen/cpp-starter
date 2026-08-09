@@ -1,6 +1,6 @@
-// KERNEL 3: raw NEON intrinsics. Module-free TU: see starter.simd.cpp for
-// why the intrinsic bodies cannot import modules. Selected by the build
-// graph for aarch64 targets only.
+// KERNEL 3: raw NEON intrinsics. Module-free TU: see simd.cc for why the
+// intrinsic bodies cannot import modules. Selected by the build graph for
+// aarch64 targets only.
 #include <arm_neon.h>
 
 #include <array>
@@ -81,7 +81,7 @@ auto neon_slab_kernel(std::array<float*, 3> const& positions,
 	float dt) noexcept -> void
 {
 	// Dense-slab fast path: the derived storage lays each half's axis arrays
-	// end to end (a static_assert'd law of starter.particles), so when the
+	// end to end (a static_assert'd law of the :particles partition), so when the
 	// view covers the full capacity the axis pointers are adjacent and all
 	// axes stream through one fused pass. The cross-array pointer arithmetic
 	// this implies is exactly what this quarantine exists for.

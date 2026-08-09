@@ -7,8 +7,11 @@
 #   reflection translation units until Clang implements that syntax.
 # - Run this only through the CMake `lint` preset over the dedicated
 #   Clang-readable module graph.
-# - `meta/` is intentionally absent from that graph until the pinned Clang
-#   frontend can parse the project's C++26 reflection syntax.
+# - A named module with reflection partitions is GCC-only as a unit, so the
+#   `starter` module and everything that imports it are absent from that
+#   graph until the pinned Clang frontend can parse the project's C++26
+#   reflection syntax; what remains is the Clang-parseable quarantine
+#   remainder (foreign/unsafe TUs that import no module).
 # - Repository-wide rules in AGENTS.md are STRICTER than this file.
 # - Query-based CustomChecks require:
 #       clang-tidy --experimental-custom-checks
@@ -107,7 +110,7 @@ HeaderFilterRegex: '.*'
 # The second alternative excludes the standard-library module sources
 # (share/libc++/v1/...): importing `std` merges their AST into every TU, and
 # they are toolchain code, not project code.
-ExcludeHeaderFilterRegex: '(^|[/\\])(meta|foreign|unsafe|generated|build|out|third_party|vendor)([/\\]|$)|[/\\]share[/\\]libc\+\+[/\\]'
+ExcludeHeaderFilterRegex: '(^|[/\\])(foreign|unsafe|generated|build|out|third_party|vendor)([/\\]|$)|[/\\]share[/\\]libc\+\+[/\\]'
 SystemHeaders: false
 FormatStyle: file
 

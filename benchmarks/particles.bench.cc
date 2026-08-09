@@ -1,12 +1,10 @@
 // Times the four integration kernels over the same reflection-derived SoA
 // storage: plain span loop (autovectorized), std::experimental::simd, raw
-// NEON, raw SVE. Kernel bodies live in module implementation units, so every
+// NEON, raw SVE. Kernel bodies live behind the module boundary, so every
 // timed call is opaque to this TU and no kernel can be folded away. Build
 // with the release preset; Debug numbers are meaningless.
 import std;
-import starter.particles;
-import starter.integrate;
-import starter.simd;
+import starter;
 
 namespace {
 

@@ -1,4 +1,4 @@
-// starter.conformance.test.cpp — the executable toolchain spec.
+// conformance.test.cc — the executable toolchain spec.
 //
 // This TU pins what the production toolchain (GCC 16.1.0, -std=c++26
 // -freflection, libstdc++) actually delivers. Conformance failures are

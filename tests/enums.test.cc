@@ -1,6 +1,5 @@
 import std;
-import starter.core;
-import starter.enums;
+import starter;
 
 namespace {
 

@@ -1,4 +1,4 @@
-export module starter.enums;
+export module starter:enums;
 
 import std;
 
