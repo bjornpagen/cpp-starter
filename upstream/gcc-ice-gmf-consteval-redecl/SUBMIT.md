@@ -161,5 +161,30 @@ upstream trunk has no aarch64-darwin target. Configured with:
 --program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
 --with-sysroot=<Xcode MacOSX.sdk>
 
-Trunk status: [gate 2 — pending the in-flight trunk build; add the
-verdict line here before sending].
+Trunk status: **still fails on master** — 17.0.0 20260809
+(experimental), gcc-mirror master cloned 2026-08-09, aarch64-linux-gnu,
+`--disable-bootstrap` build with default (enabled) checking. Under
+checking the crash is the assertion:
+
+```
+repro.cc:3:22: internal compiler error: in transfer_defining_module, at cp/module.cc:22418
+0x867d1b fancy_abort(char const*, int, char const*)
+0xa78e73 transfer_defining_module(tree_node*, tree_node*)
+	gcc/cp/module.cc:22418
+0x97d873 duplicate_decls(tree_node*, tree_node*, bool, bool)
+	gcc/cp/decl.cc:2721
+0xaad6cb pushdecl(tree_node*, bool)
+	gcc/cp/name-lookup.cc:4089
+0x99aa0f start_decl(cp_declarator const*, cp_decl_specifier_seq*, int, tree_node*, tree_node*, tree_node**)
+	gcc/cp/decl.cc:6801
+0xb2237f cp_parser_init_declarator
+	gcc/cp/parser.cc:26372
+(... ordinary parser frames ...)
+```
+
+The include variant (`repro-include.cc` + `q.h`) fails the identical
+assertion at the same coordinates. So the release-build segfault is
+this checking assert: merging the inline definition over the earlier
+non-inline declaration (`duplicate_decls`) transfers the defining
+module between the two declarations, and `transfer_defining_module`
+asserts at module.cc:22418.

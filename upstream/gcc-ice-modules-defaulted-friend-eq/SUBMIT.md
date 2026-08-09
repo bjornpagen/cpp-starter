@@ -120,5 +120,38 @@ upstream trunk has no aarch64-darwin target. Configured with:
 --program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
 --with-sysroot=<Xcode MacOSX.sdk>
 
-Trunk status: [gate 2 — pending the in-flight trunk build; add the
-verdict line here before sending].
+Trunk status: **still fails on master** — 17.0.0 20260809
+(experimental), gcc-mirror master cloned 2026-08-09, aarch64-linux-gnu,
+`--disable-bootstrap` build with default (enabled) checking. Under
+checking the crash is the assertion:
+
+```
+In module A, imported at b.cc:1:
+a.cc:5:31: internal compiler error: in mangle_module, at cp/module.cc:16805
+0x867d1b fancy_abort(char const*, int, char const*)
+0xa52783 mangle_module(int, bool)
+	gcc/cp/module.cc:16805
+0xa22ed7 write_unqualified_name
+	gcc/cp/mangle.cc:1527
+0xa1fe67 write_encoding
+	gcc/cp/mangle.cc:945
+0xa200cb write_mangled_name
+	gcc/cp/mangle.cc:834
+0xa25b9b mangle_decl_string
+	gcc/cp/mangle.cc:4845
+0xa25d6b get_mangled_id / mangle_decl(tree_node*)
+	gcc/cp/mangle.cc:4861 / 4899
+0x17f10bb decl_assembler_name(tree_node*)
+	gcc/tree.cc:858
+0xe2c027 symtab_node::get_comdat_group_id()
+	gcc/cgraph.h:289
+0xe2c027 analyze_functions
+	gcc/cgraphunit.cc:1222
+0xe2da37 symbol_table::finalize_compilation_unit()
+	gcc/cgraphunit.cc:2593
+```
+
+So the release-build segfault is this checking assert: the importer
+computes the COMDAT group for the defaulted friend, mangling demands
+the declaration's module, and `mangle_module` asserts at
+module.cc:16805.

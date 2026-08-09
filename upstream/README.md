@@ -74,11 +74,15 @@ darwin trunk bootstrap is impossible by construction.
   `duplicate_decls` for GMF), now in the SUBMIT bodies.
 - ~~fixincludes real `make check`~~ **CLEARED 2026-08-09**: passed in CI
   with autogen present, over the patched trunk.
-1. **Trunk ICE status** (CI trunk-quick, in flight): add the "still
-   reproduces on trunk @ <sha>" line to both ICE SUBMITs (the marked
-   `[gate 2 — pending]` slots), or the fixed-on-trunk verdict, which
-   would turn the reports into regression notes against 16.1.
-2. **Bootstrap + regtest** (CI bootstrap-regtest, in flight): full
+- ~~Trunk ICE status~~ **CLEARED 2026-08-09**: both ICEs still fail on
+  master (17.0.0 20260809 experimental, aarch64-linux-gnu) — and trunk's
+  enabled checking upgraded them to assertions with exact coordinates,
+  now in the SUBMIT bodies: friend-eq asserts in `mangle_module` at
+  cp/module.cc:16805 (via COMDAT-group mangling at finalize); GMF
+  asserts in `transfer_defining_module` at cp/module.cc:22418 (via
+  `duplicate_decls`), include variant identical.
+1. **Bootstrap + regtest** (two racing: local finch container and CI
+   bootstrap-regtest): full
    default-language bootstrap of the patched trunk plus `make -k check`
    on aarch64-linux-gnu, summary artifact — becomes the one-line
    testing statement in the fixincludes SUBMIT.
