@@ -53,6 +53,10 @@ rules](https://gcc.gnu.org/lists.html).
 - GCC asks for an archive only when reproduction requires multiple source
   files. The GMF report therefore has a tiny archive containing only its
   primary text sources; the sources also remain inline in the report body.
+- The Darwin report has both its three-line source and a plain preprocessed
+  `rsize.ii` attachment. The latter was generated against the unfixed SDK
+  header path and reproduces the missing-`rsize_t` diagnostics without
+  requiring maintainers to have that SDK installed.
 - Do not upload build products, CMIs, object files, core files, or the large
   stdexec source tree.
 
@@ -108,7 +112,10 @@ the full raw comparison must remain available if requested.
 1. Obtain a GCC Bugzilla account. If self-service registration fails, email
    `gcc-bugzilla-account-request@gcc.gnu.org`.
 2. File the fixincludes report from its `SUBMIT.md`, Product `gcc`, Component
-   `target`, Version `16.1.0`. Record the assigned number as `NNNNN`.
+   `target`, Version `16.1.0`. Attach `rsize.cc` and `rsize.ii`, and add PR
+   116827 as See Also: it is the earlier `ptrdiff_t`/`size_t` instance of the
+   same SDK predicate mistake, but its committed workaround cannot define
+   `rsize_t`. Record the assigned number as `NNNNN`.
 3. In the GCC clone, amend the actual patch commit:
    - change its subject to
      `fixincludes: Fix rsize_t with Darwin modules [PRNNNNN]`;

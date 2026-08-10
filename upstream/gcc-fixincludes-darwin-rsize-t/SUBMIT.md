@@ -18,6 +18,15 @@
   `fixed-header.h` is the earlier production local fixinclude (a full
   header replacement). The upstream patch instead rewrites the guard;
   see below.
+- **Bugzilla attachments:** attach the plain three-line `rsize.cc` and the
+  27 KiB preprocessed `rsize.ii`. The latter was generated with GCC 16.1.0
+  against the raw macOS 26.2 SDK include path (bypassing the installed local
+  fixinclude) and still produces the three missing-`rsize_t` diagnostics with
+  `-fpreprocessed`. Do not archive either file.
+- **See Also:** PR target/116827. That report diagnosed the same bad SDK
+  assumption for the earlier `ptrdiff_t`/`size_t` headers. Its committed
+  `stddef.h` workaround handles those two types but does not implement
+  `__need_rsize_t`, so this newer header/type is a distinct follow-on.
 - **Verified against trunk (re-run 2026-08-10):** The exact tested commit is
   `9f4a16ae995` on master base `a1ba7736cfb`. Its format-patch applies cleanly
   with `git am`, without fuzz, to fetched upstream master `8412da1ce39` (18
@@ -129,6 +138,11 @@ Observed environment:
 The Darwin arm64 port is corroborating context, not the source of the bug:
 the failing feature predicate is upstream GCC front-end behavior, and the
 fix applies at the upstream Darwin fixincludes boundary.
+
+PR target/116827 is the closely related macOS 15 report and should be added
+as See Also. It covers the same `__has_feature(modules)`-implies-Clang
+assumption for `ptrdiff_t` and `size_t`; its committed workaround cannot
+define `rsize_t`, so it does not fix this testcase.
 
 Minimal file and exact command:
 
