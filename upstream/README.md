@@ -1,4 +1,4 @@
-# upstream/ — everything this project sends upstream (GCC + LLVM)
+# upstream/ — everything this project sends upstream
 
 One directory per item: verified repros, patches where we authored one,
 and paste-ready `SUBMIT.md` text.
@@ -12,7 +12,6 @@ awaiting maintainer ok-to-test).
 | `gcc-ice-modules-defaulted-friend-eq` | bug report (2-file repro) | Bugzilla, `c++`, ice-on-valid-code | **SEND after gate 2** |
 | `gcc-ice-gmf-consteval-redecl` | bug report (4-line repro) | Bugzilla, `c++`, ice-on-valid-code | **SEND after gate 2** |
 | `libstdcxx-silent-empty-std-module` | bug report (build behavior) | Bugzilla, `libstdc++` | **SEND last** (cites the posted fixincludes PR) |
-| `llvm-tidy-unused-using-decls-modules` | bug report → verdict | llvm/llvm-project GitHub issues | **DO NOT FILE** — exact dup #162619 closed-completed, fixed on main by PR #183638 (`ce6a3d9`); trunk clang-tidy-24 empirically clean; optional backport request is paste-ready in its SUBMIT.md |
 
 Comment-only drops (no directories): CC + comment on **PR 124197** with
 our `template for`/`-Wshadow` evidence (16.1.0 confirmation, reflection
@@ -24,6 +23,11 @@ a candidate patch was attached upstream 2026-08-05.
 Not filed, deliberately: the partition-BMI `std::expected` corruption has
 no standalone repro; its reduction ledger lives with its workaround pin in
 the bumbledb repo (`cpp/PINS.md`, entry `gcc-partition-bmi-expected`).
+Also not filed: the clang-tidy `misc-unused-using-decls` false positive
+on `export using` — it is already fixed upstream (exact dup
+llvm/llvm-project#162619, fixed on main by PR #183638, commit `ce6a3d9`);
+the record and its tombstone live in bumbledb `cpp/PINS.md`, entry
+`llvm22-unused-using-decls`.
 Checked and conforming, never file: `^^` on using-declarations (P2996R13)
 and `inplace_vector::try_push_back` returning `optional<T&>` (P3981R2).
 
@@ -165,73 +169,3 @@ Answer triage with the variant matrices already in the SUBMITs. When a
 fix lands upstream for any item, its in-tree workaround pin (PINS.md,
 both repos) has a tombstone pointing back here — delete workaround and
 pin together.
-## How to send the LLVM items (from llvm.org/docs/GitHub.html, Contributing.html, HowToSubmitABug.html)
-
-### Bug reports → GitHub issues on llvm/llvm-project
-
-1. **File the issue FIRST, before any PR**, at
-   https://github.com/llvm/llvm-project/issues — a fix PR then cites it.
-2. **Before filing**, re-run the dupe search recorded in the item's
-   `SUBMIT.md` (searches go stale; `gh search issues --repo
-   llvm/llvm-project`, open AND closed). The current LLVM item is the
-   cautionary tale: its exact duplicate (#162619) was already closed as
-   completed, so the bug itself must NOT be filed — only the optional
-   backport request in its `SUBMIT.md`.
-3. **Title convention** (observed norm, not a hard rule):
-   `[clang-tidy] <check-name>: short description` or
-   `[clang-tidy] false positive in <check> ...`.
-4. **Labels**: `clang-tidy` is the routing label (it subscribes the
-   issue-subscribers team); `check-request` is only for proposing NEW
-   checks. You likely can't self-label without triage rights — that's
-   fine, the bug-report doc says triagers will add it.
-5. **Body must contain** (all pre-written in each `SUBMIT.md`): everything
-   needed to reproduce — the reduced testcase inline, the exact clang-tidy
-   command line, the diagnostic emitted vs expected, where the binary came
-   from (`clang-tidy --version` verbatim), and for fix-it bugs the
-   before/after code.
-
-### Fix PRs → GitHub PR from the fork
-
-1. **PR from the FORK only** (github.com/bjornpagen/llvm-project): push
-   the branch to the fork and open the PR from there. Do NOT create
-   branches on llvm/llvm-project itself (only `users/<username>/`
-   stacked-PR branches are tolerated there).
-2. **Format precondition**: run `git-clang-format HEAD~1` on the branch
-   before pushing — the CI format job hard-fails PRs that skip it.
-3. **Title**: `[clang-tidy] Fix false positive in <check-name> ...`,
-   ~72 chars (GitHub truncates at 72). **The PR title + description become
-   the final squashed commit message** — commit messages inside the PR are
-   discarded — so write them as the commit you want in history.
-4. **Cite the issue** in the description with `Fixes #NNNNN` so the merge
-   auto-closes it. Add release-notes and test updates in the same PR
-   (clang-tools-extra checks require both; reviewers will ask).
-5. **Who merges**: first-time contributors don't have commit access —
-   after approval, ask the approving reviewer to land it ("I don't have
-   commit access, please merge"); that request in a PR comment is the
-   accepted practice.
-6. **Ping cadence**: if a PR sits unreviewed, ping on the PR thread about
-   once a week — LLVM's code-review doc explicitly endorses weekly pings.
-
-## Checked, conforming, not filed
-
-- **`^^` on names introduced by using-declarations** (`^^std::uint64_t`
-  → "cannot be applied to a using-declaration"): P2996R13 makes
-  reflect-expressions ill-formed on using-declarators — GCC is
-  conforming. Verified workarounds recorded in the in-tree pins:
-  `^^::uint64_t`, a local alias, or resolution through a template
-  parameter.
-- **`inplace_vector::try_push_back` returning `optional<T&>`**: P3981R2
-  (adopted March 2026) — libstdc++ tracks the working draft; our
-  P0843R14-era comments were corrected instead.
-
-## Not upstream material
-
-- The `db_impl.cc` implementation-unit split (bumbledb) works around
-  `gcc-modules-partition-bmi-expected` (not yet filed, above); the
-  scoped `-Wno-shadow` works around PR 124197; the iterator-pair
-  `std::string` construction works around PR 71962. Each gets deleted
-  when its upstream fix lands.
-- stdexec fixes live on the maintained fork
-  (github.com/bjornpagen/stdexec, pinned by the top-level CMakeLists):
-  every fork commit has a pending upstream PR (briefs in FORK.md), and
-  the fork's success condition is its own emptiness.
