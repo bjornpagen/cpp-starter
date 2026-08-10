@@ -1,7 +1,7 @@
-From 14d1f0c9858e97a10cc26f36a1c923c1adf1183f Mon Sep 17 00:00:00 2001
+From 03694fa6a2f0f71d9737f95a7a98851842763254 Mon Sep 17 00:00:00 2001
 From: Bjorn Pagen <hello@bjornpagen.com>
 Date: Sun, 9 Aug 2026 10:54:17 -0500
-Subject: [PATCH] fixincludes: Fix rsize_t with Darwin modules
+Subject: [PATCH] fixincludes: Fix rsize_t with Darwin modules [PR999999]
 
 The Darwin SDK selects a Clang-specific branch when
 __has_feature(modules) is true.  GCC also reports this feature with
@@ -14,6 +14,7 @@ branch.  This change does not change Clang behavior.
 
 fixincludes/ChangeLog:
 
+	PR target/999999
 	* inclhack.def (darwin_rsize_t_modules): New fix.
 	* fixincl.x: Regenerate.
 	* tests/base/sys/_types/_rsize_t.h: New test.

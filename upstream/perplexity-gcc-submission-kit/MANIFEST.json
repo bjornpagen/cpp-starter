@@ -1,0 +1,91 @@
+{
+  "package": "perplexity-gcc-submission-kit",
+  "version": "2026-08-10",
+  "submission_identity": {
+    "name": "Bjorn Pagen",
+    "email": "hello@bjornpagen.com"
+  },
+  "requires_explicit_human_dco_confirmation": true,
+  "gcc_patch": {
+    "source_commit": "14d1f0c9858e97a10cc26f36a1c923c1adf1183f",
+    "verified_master": "cee53ed42c753a0c936e005b7dd15f029ca34da7",
+    "pr_placeholder": "999999",
+    "expected_placeholder_occurrences": 2,
+    "allowed_edit": "Replace both 999999 strings with the six-digit Darwin Bugzilla PR number."
+  },
+  "checksum_scope": "CHECKSUMS.sha256 covers every package file except CHECKSUMS.sha256 itself.",
+  "files": [
+    {
+      "path": "README.md",
+      "purpose": "Normative autonomous submission runbook."
+    },
+    {
+      "path": "START-PROMPT.txt",
+      "purpose": "Prompt to give the Perplexity agent with this package."
+    },
+    {
+      "path": "MANIFEST.json",
+      "purpose": "Machine-readable package inventory and patch constraints."
+    },
+    {
+      "path": "CHECKSUMS.sha256",
+      "purpose": "SHA-256 integrity list for the other package files."
+    },
+    {
+      "path": "01-darwin-rsize/BUGZILLA.md",
+      "purpose": "Darwin rsize_t Bugzilla fields and report text."
+    },
+    {
+      "path": "01-darwin-rsize/PATCH-EMAIL.md",
+      "purpose": "GCC patch email recipients, subject, body, and checks."
+    },
+    {
+      "path": "01-darwin-rsize/PATCH-TEMPLATE.patch",
+      "purpose": "GCC format-patch with the two replaceable 999999 PR placeholders."
+    },
+    {
+      "path": "01-darwin-rsize/rsize.cc",
+      "purpose": "Minimal Darwin source attachment."
+    },
+    {
+      "path": "01-darwin-rsize/rsize.ii",
+      "purpose": "Preprocessed Darwin source attachment."
+    },
+    {
+      "path": "02-gmf-ice/BUGZILLA.md",
+      "purpose": "Global-module-fragment ICE Bugzilla fields and report text."
+    },
+    {
+      "path": "02-gmf-ice/gmf-extern-inline-repro.tar.gz",
+      "purpose": "Two-file GMF ICE reproduction archive."
+    },
+    {
+      "path": "02-gmf-ice/q.h",
+      "purpose": "GMF ICE reproduction header."
+    },
+    {
+      "path": "02-gmf-ice/repro-include.cc",
+      "purpose": "GMF ICE reproduction module unit."
+    },
+    {
+      "path": "03-libstdcxx-fallback/BUGZILLA.md",
+      "purpose": "libstdc++ empty-interface fallback Bugzilla report."
+    },
+    {
+      "path": "04-existing-comments/PR124197.md",
+      "purpose": "C++26 reflection evidence for existing PR124197."
+    },
+    {
+      "path": "04-existing-comments/PR71962.md",
+      "purpose": "Constant-evaluation sanitizer evidence for existing PR71962."
+    },
+    {
+      "path": "05-apple-feedback/APPLE-FEEDBACK.md",
+      "purpose": "Apple Feedback Assistant report with GCC cross-links."
+    },
+    {
+      "path": "05-apple-feedback/rsize.cc",
+      "purpose": "Apple report source attachment."
+    }
+  ]
+}

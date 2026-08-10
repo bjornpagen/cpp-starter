@@ -1,0 +1,17 @@
+4c8b641871b08bfdca0164aa7fcdcdb1c19b7b7c04d983b7b5a5686ccc5680ea  ./01-darwin-rsize/BUGZILLA.md
+e48e40e39a98a7f7647d36ad27bafd1694f2f8cf85392768133b095d9aecdb38  ./01-darwin-rsize/PATCH-EMAIL.md
+e6c5364c379d4a2b9830916897148ff53f7f1746958669ca27b7fcb377a8c65c  ./01-darwin-rsize/PATCH-TEMPLATE.patch
+953136b555f6df3d2c182d020935c8e60bdaecab94054586f2c9c78bf8ab715d  ./01-darwin-rsize/rsize.cc
+eeb3fcc29b69ab88170a766abc49db885a1845215b75125e2d2063f696b6d05f  ./01-darwin-rsize/rsize.ii
+23c235882ad02808e32744dc2dd0dcf0606a71c7fdc2d8e146c6eee7abdb3ebf  ./02-gmf-ice/BUGZILLA.md
+556263cc744b33798adabd084bb59c59d5ea9a8f29686eddf3c8cd80ade0c834  ./02-gmf-ice/gmf-extern-inline-repro.tar.gz
+d68d325cd7926dcf9df7dc2cfbc8679386060b8a19b145759c09b374397efa23  ./02-gmf-ice/q.h
+c308f2eab6388414e3194d5b88d3608509677b3928ac01cb48d6d4bdaddfb58b  ./02-gmf-ice/repro-include.cc
+578eb127ca0178028576bd78cf103bdce5c1c01aad7c5b776130eb25e53f00fa  ./03-libstdcxx-fallback/BUGZILLA.md
+3a42475ad9dca2c992bbd126dd06e41b2ce39edddbc0a514014b33776d202c28  ./04-existing-comments/PR124197.md
+457b19327c61f24c5b6c266d7d38ab3e842f56f80655400dc4a1a827486c00bc  ./04-existing-comments/PR71962.md
+5ad1ccc77ccb17d7026d2f14852a7e575f973972888cfc0a2e087e688b965e40  ./05-apple-feedback/APPLE-FEEDBACK.md
+953136b555f6df3d2c182d020935c8e60bdaecab94054586f2c9c78bf8ab715d  ./05-apple-feedback/rsize.cc
+6ff84cd286d01a0467a489fe3ccdfa6e43d68bd3d4cbf8cff739044c4f080788  ./MANIFEST.json
+df2eeeb100bbed523dd9f99a375fa21682fd7674909722a9e9f7f513afaccd2b  ./README.md
+0c5e91c3606362e51baa18c848de9a189ba85e627dbaa5929030295d7a601b5f  ./START-PROMPT.txt

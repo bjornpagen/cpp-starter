@@ -1,0 +1,1 @@
+Read README.md in full. Execute its phases in order. Use the browser and Gmail tools for all public actions. Use Bjorn Pagen <hello@bjornpagen.com> for every submission. Ask for the exact DCO confirmation before any public action. After each phase, report the state variables and public URLs. Stop only at a checkpoint defined in README.md.

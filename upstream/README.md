@@ -8,12 +8,23 @@ DCO means Developer Certificate of Origin. ICE means internal compiler error. GM
 
 1. Obtain a GCC Bugzilla account.
 2. Use `gcc-bugzilla-account-request@gcc.gnu.org` if account creation fails.
-3. Use `Bjorn Pagen <bjorn.pagen@alpha.school>` for the patch submission.
+3. Use `Bjorn Pagen <hello@bjornpagen.com>` for every public submission.
 4. Read the [GCC DCO](https://gcc.gnu.org/dco.html).
 5. Confirm that you have the right to submit every patch line.
 6. Obtain an employer or school disclaimer if another organization owns the work.
 
 The public mailing-list archive keeps your name, email address, and message permanently.
+
+## Browser-and-Gmail handoff
+
+For a supervised Perplexity run, upload
+[`perplexity-gcc-submission-kit.zip`](perplexity-gcc-submission-kit.zip) and
+give it the prompt in
+[`perplexity-gcc-submission-kit/START-PROMPT.txt`](perplexity-gcc-submission-kit/START-PROMPT.txt).
+The ZIP contains its own root-level `README.md`, exact submission text,
+attachments, integrity checks, stop conditions, and the PR-number-safe patch
+template. Verify the download with
+[`perplexity-gcc-submission-kit.zip.sha256`](perplexity-gcc-submission-kit.zip.sha256).
 
 ## Send order
 
@@ -28,7 +39,8 @@ Follow its Bugzilla steps. Bugzilla will assign a number such as `PR123456`.
 Do not send the current patch before this step.
 
 1. Add `[PR123456]` to the GCC commit subject.
-2. Add `PR target/123456` above the ChangeLog entry.
+2. Add `PR target/123456` inside the `fixincludes/ChangeLog:` block,
+   immediately before the first `*` entry.
 3. Keep the `Signed-off-by` line.
 4. Generate a new format patch.
 5. Run the GCC commit checker.

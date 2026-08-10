@@ -2,7 +2,9 @@
 
 File this report after Bugzilla creates the Darwin `rsize_t` report.
 
-Replace every `NNNNN` below with the Darwin PR number.
+Replace every `DARWIN_PR_NUMBER` placeholder with the Darwin PR number.
+
+Replace `PATCH_ARCHIVE_URL` with the public gcc-patches archive URL.
 
 ## Step 1: set the Bugzilla fields
 
@@ -22,7 +24,7 @@ Add these reports to See Also:
 
 - `https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124268`
 - `https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124554`
-- `https://gcc.gnu.org/bugzilla/show_bug.cgi?id=NNNNN`
+- `https://gcc.gnu.org/bugzilla/show_bug.cgi?id=DARWIN_PR_NUMBER`
 
 Do not attach a patch.
 
@@ -76,7 +78,11 @@ CMake rejected each file with this error:
 
 is of type CXX_MODULES but does not provide a module interface unit or partition
 
-PR target/NNNNN describes the Darwin module failure that exposed this state. The install bug is target-independent. Any handled module compile failure produces the same files.
+PR target/DARWIN_PR_NUMBER describes the Darwin module failure that exposed this state. The install bug is target-independent. Any handled module compile failure produces the same files.
+
+The related GCC patch is public here:
+
+PATCH_ARCHIVE_URL
 
 PR libstdc++/124554 also exercised the fallback on supported offload targets. Its comments confirm that a successful bootstrap was intentional.
 

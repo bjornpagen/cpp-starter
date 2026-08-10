@@ -11,7 +11,7 @@ Confirm that you have the right to submit every patch line. Obtain a disclaimer 
 The patch uses this identity:
 
 ```text
-Bjorn Pagen <bjorn.pagen@alpha.school>
+Bjorn Pagen <hello@bjornpagen.com>
 ```
 
 ## Step 2: file the Bugzilla report
@@ -121,7 +121,8 @@ Amend the GCC commit subject to this text:
 fixincludes: Fix rsize_t with Darwin modules [PRNNNNN]
 ```
 
-Add this line above `fixincludes/ChangeLog:`:
+Add this line inside the `fixincludes/ChangeLog:` block, immediately before
+the first `*` entry:
 
 ```text
 PR target/NNNNN
@@ -130,7 +131,7 @@ PR target/NNNNN
 Keep this line at the end of the commit message:
 
 ```text
-Signed-off-by: Bjorn Pagen <bjorn.pagen@alpha.school>
+Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
 ```
 
 Generate a new patch with `git format-patch -1`.
@@ -159,7 +160,9 @@ Use the subject from the generated patch:
 
 Send plain text. Attach the patch as `text/x-patch`, or put the patch inline.
 
-Do not use HTML, base64, or an `application/*` attachment. Remove any confidentiality footer.
+Do not use HTML or an `application/*` attachment. If Gmail hides the transfer
+encoding, continue only when it identifies the attachment as text. Remove any
+confidentiality footer.
 
 Subscribe before you send, or add your address to GCC's global allow list. This prevents a spam filter from dropping the message.
 
@@ -189,6 +192,8 @@ Testing:
 - The patch applied to current GCC master.
 - Clean unpatched and patched trees completed make bootstrap for all default languages.
 - Both trees completed make -k check.
+- The full bootstraps and test suites ran on aarch64-unknown-linux-gnu.
+- The SDK-specific before/after checks targeted aarch64-apple-darwin24.
 
 The full result sets had machine-load differences. The unpatched analyzer plug-in timed out, so its tests did not run there. The patched tree reached those tests. Some LTO and ASan option variants also differed.
 
@@ -202,10 +207,10 @@ Attach the regenerated patch after this text.
 ## Verified record
 
 - Bootstrap-tested commit: `9f4a16ae995e455e7d7544a31cee1b5ed5c41986`
-- Current commit: `ee0dd671d05ea814e655338d31f32bc050a6e26a`
+- Current commit: `14d1f0c9858e97a10cc26f36a1c923c1adf1183f`
 - The current commit changes only the commit text. Its source diff is identical.
 - Tested trunk base: `a1ba7736cfb4a5c7d97116934bd010de1207d002`
-- Current-master application check: `8412da1ce3986754dcaf597fe06d29bd50391825`
+- Current-master application check: `cee53ed42c753a0c936e005b7dd15f029ca34da7`
 - Tested Linux host: `aarch64-unknown-linux-gnu`
 - Real SDK test target: `aarch64-apple-darwin24`
 - Generated-file tool: AutoGen 5.18.16
