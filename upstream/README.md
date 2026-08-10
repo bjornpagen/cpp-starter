@@ -1,171 +1,160 @@
-# upstream/ — everything this project sends upstream
+# upstream/ — GCC submission queue
 
-One directory per item: verified repros, patches where we authored one,
-and paste-ready `SUBMIT.md` text.
-NVIDIA/stdexec material does NOT live here: those fixes are commits on the
-maintained fork (github.com/bjornpagen/stdexec — PRs #2167/#2168 open,
-awaiting maintainer ok-to-test).
+This directory contains the exact reports, reproductions, and patch artifact
+prepared for GCC. NVIDIA/stdexec PRs #2167 and #2168 live in the maintained
+stdexec fork and are not part of this queue.
 
-| Item | Kind | Target | Status |
-|---|---|---|---|
-| `gcc-fixincludes-darwin-rsize-t` | patch (format-patch + DCO) | Bugzilla PR first, then gcc-patches@ | **SEND after gates 1, 3, 4** |
-| `gcc-ice-modules-defaulted-friend-eq` | bug report (2-file repro) | Bugzilla, `c++`, ice-on-valid-code | **SEND after gate 2** |
-| `gcc-ice-gmf-consteval-redecl` | bug report (4-line repro) | Bugzilla, `c++`, ice-on-valid-code | **SEND after gate 2** |
-| `libstdcxx-silent-empty-std-module` | bug report (build behavior) | Bugzilla, `libstdc++` | **SEND last** (cites the posted fixincludes PR) |
+| Item | Submission | Status |
+|---|---|---|
+| `gcc-fixincludes-darwin-rsize-t` | Bugzilla `target`, then one patch to `gcc-patches@` | **READY after Bugzilla assigns the PR number** |
+| `gcc-ice-modules-defaulted-friend-eq` | duplicate record | **DO NOT FILE** — PR 126223 comment 3 already covers it |
+| `gcc-ice-gmf-consteval-redecl` | Bugzilla `c++`, `ice-on-valid-code` | report and warning-free repro ready |
+| `libstdcxx-silent-empty-std-module` | Bugzilla `libstdc++` | report ready; file after fixincludes PR |
 
-Comment-only drops (no directories): CC + comment on **PR 124197** with
-our `template for`/`-Wshadow` evidence (16.1.0 confirmation, reflection
-variant, fires once per element), and on **PR 71962** with the
-reflection-era impact of UBSan (`null`/`nonnull-attribute`) refusing to
-constant-fold `std::string(ptr, size)` over vague-linkage storage — note
-a candidate patch was attached upstream 2026-08-05.
+There is one GCC code patch and two new Bugzilla reports in this queue. The
+defaulted-comparison directory is only a duplicate/provenance record.
 
-Not filed, deliberately: the partition-BMI `std::expected` corruption has
-no standalone repro; its reduction ledger lives with its workaround pin in
-the bumbledb repo (`cpp/PINS.md`, entry `gcc-partition-bmi-expected`).
-Also not filed: the clang-tidy `misc-unused-using-decls` false positive
-on `export using` — it is already fixed upstream (exact dup
-llvm/llvm-project#162619, fixed on main by PR #183638, commit `ce6a3d9`);
-the record and its tombstone live in bumbledb `cpp/PINS.md`, entry
-`llvm22-unused-using-decls`.
-Checked and conforming, never file: `^^` on using-declarations (P2996R13)
-and `inplace_vector::try_push_back` returning `optional<T&>` (P3981R2).
+Official policy sources checked for this pass: [contributing and
+testing](https://gcc.gnu.org/contribute.html), [DCO
+sign-off](https://gcc.gnu.org/dco.html), [bug-report
+content](https://gcc.gnu.org/bugs/), and [mailing-list posting
+rules](https://gcc.gnu.org/lists.html).
 
-## Verified state (2026-08-09, everything re-run cold)
+## Submission invariants
 
-- Patch applies clean with `git am` to trunk master @ 0621cf67366 on a
-  freshly reset clone (origin had not advanced past the generation base).
-- Passes GCC's own server-side commit gate:
-  `contrib/gcc-changelog/git_check_commit.py` → `OK`.
-- `contrib/check_GNU_style.sh` flags are all documented-inapplicable
-  (generated `fixincl.x`, verbatim SDK match text, `tests/base` wrapper
-  convention) — preemption recorded in the SUBMIT.
-- fixincludes builds standalone from the patched tree; the self-test
-  replication reproduces the fixture **byte-identically**.
-- Both ICE repros re-verified cold on the local 16.1.0: outputs match the
-  SUBMIT transcripts verbatim (commands quoted as `g++-16`, the literal
-  driver).
-- libstdc++ report's cited `Makefile.am` line numbers are exact on
-  today's trunk; no drift.
-- Per-item duplicate searches recorded in each SUBMIT with dates; policy
-  compliance audited against the live contribute.html / bugs pages
-  2026-08-09.
+- GCC contribution and bug-reporting policy was re-read on 2026-08-10.
+- The patch was built and regression-tested exactly as commit `9f4a16ae995`
+  on trunk base `a1ba7736cfb`. It contains only the fixincludes change,
+  regenerated `fixincl.x`, and its fixture. The unchanged format-patch also
+  applies cleanly with `git am` to fetched upstream master `8412da1ce39`
+  (2026-08-10).
+- Author, committer, and DCO `Signed-off-by` identities are
+  `Bjorn Pagen <bjorn.pagen@alpha.school>`.
+- Before sending, personally confirm that no employer or school owns the
+  contribution. GCC's DCO path certifies that right; if an employer or school
+  owns the work, obtain the required disclaimer instead of relying on the
+  sign-off alone.
+- This patch had AI-assisted drafts. GCC's published contribution and DCO
+  pages do not provide a separate AI exception: the human signer still
+  certifies the right to submit every line. Personally review the final
+  `inclhack.def` change and commit message and sign only if that certification
+  is true. The generated `fixincl.x` and fixture are outputs of GCC's own
+  `genfixes` pipeline, not model-authored source.
+- The paired Linux bootstrap and test runs are preserved. GCC's full-suite
+  comparator is noisy because the unpatched analyzer plugin build timed out
+  under load and the two runs selected different LTO/ASan option spellings.
+  It contains no baseline PASS that became a patched FAIL. A sequential rerun
+  of the entire affected analyzer-plugin slice is identical: 28 PASS and 5
+  expected XFAIL in both trees; `contrib/compare_tests` exits 0 for that
+  focused comparison. Do not shorten this to an unsupported claim that every
+  full-suite result was byte-for-byte identical.
+- The new GMF module ICE leads with official FSF GCC builds. The out-of-tree
+  aarch64-Darwin build is corroboration only.
+- GCC asks for an archive only when reproduction requires multiple source
+  files. The GMF report therefore has a tiny archive containing only its
+  primary text sources; the sources also remain inline in the report body.
+- Do not upload build products, CMIs, object files, core files, or the large
+  stdexec source tree.
 
-## The provenance constraint (read before sending anything)
+## Why the fixincludes design is the current recommendation
 
-Upstream trunk has **no `aarch64-*-darwin*` target** in `gcc/config.gcc`
-— the Apple-Silicon port is out of tree, and this machine's 16.1.0 was
-built from the FSF release tarball **plus the darwin-arm64 port series**
-(`~/.gcc/build/gcc-16.1.0.diff`). The bugs policy excludes "unofficial
-releases or snapshots not issued by the GCC project," so the two ICE
-reports must lead with reproduction on an **official FSF build**, citing
-darwin as corroborating context with the port named. The module ICEs are
-front-end streaming bugs, expected target-independent; gate 2 produces
-that evidence. The fixincludes patch is unaffected in substance
-(`x86_64-*-darwin*` is an upstream target and hits the same SDK header),
-but its bootstrap evidence also comes from Linux (gate 3), since a native
-darwin trunk bootstrap is impossible by construction.
+The SDK predicate is the false statement: `__has_feature(modules)` is being
+used as a proxy for “Clang with Clang's `__need_rsize_t` protocol.” The patch
+corrects that predicate at GCC's existing system-header adaptation boundary.
+It does not add a permanent Darwin conditional to every compilation, change
+GCC's truthful feature reporting, or teach generic `stddef.h` another
+compiler's private protocol.
 
-## Gates (each gate updates its SUBMIT and then deletes itself here)
+This matches current GCC practice. Recent Darwin SDK incompatibilities are
+handled in fixincludes, and GCC's Darwin maintainer has described fixincludes
+as still necessary for shipped SDKs. PR 116827 is useful contrast: it changed
+GCC's `stddef.h` only where the SDK include-guard behavior required compiler
+cooperation. Here the SDK already has a correct non-Clang typedef branch, so
+routing GCC to it is the smaller repair.
 
-- ~~genfixes regeneration~~ **CLEARED 2026-08-09**: AutoGen 5.18.16 via
-  the vanilla container; regenerated `fixincl.x` == hand-written hunk
-  except the dated header; regenerated version adopted (amended commit
-  `64ba9daf`, commit gate re-passed), caveat deleted from the SUBMIT.
-- ~~Vanilla ICE evidence~~ **CLEARED 2026-08-09**: both ICEs reproduce
-  on official FSF `gcc:16.1.0` on aarch64-linux-gnu (local finch
-  container) AND x86_64 + aarch64 (CI) — with symbolic backtraces
-  (`module_state::mangle` for friend-eq; `transfer_defining_module` ←
-  `duplicate_decls` for GMF), now in the SUBMIT bodies.
-- ~~fixincludes real `make check`~~ **CLEARED 2026-08-09**: passed in CI
-  with autogen present, over the patched trunk.
-- ~~Trunk ICE status~~ **CLEARED 2026-08-09**: both ICEs still fail on
-  master (17.0.0 20260809 experimental, aarch64-linux-gnu) — and trunk's
-  enabled checking upgraded them to assertions with exact coordinates,
-  now in the SUBMIT bodies: friend-eq asserts in `mangle_module` at
-  cp/module.cc:16805 (via COMDAT-group mangling at finalize); GMF
-  asserts in `transfer_defining_module` at cp/module.cc:22418 (via
-  `duplicate_decls`), include variant identical.
-- ~~Bootstrap + regtest~~ **CLEARED 2026-08-10**: full default-language
-  bootstrap of the patched trunk + `make -k check` on
-  aarch64-unknown-linux-gnu (local container) — ~975k passes, 79 FAILs
-  all environmental/pre-existing, none patch-related (hack is
-  darwin-gated). Statement and per-suite table in the fixincludes
-  SUBMIT; `.sum` evidence kept at `~/Documents/gcc-bootstrap-linux/`.
-- ~~Final read-through~~ **CLEARED 2026-08-10**: no pending markers in
-  any SUBMIT.
+The hack's bypass matches the already-corrected predicate, rather than any
+unrelated occurrence of `__clang__`. Running the fix twice is therefore
+idempotent without broadly skipping future SDK variants.
 
-**All gates are cleared. Every item is send-ready; the procedure below
-is the only remaining work, and it is human-only.**
+## Regression-test record
 
-## The send procedure (in order; do not reorder)
+The unpatched and patched trees use the same GCC revision, container image,
+configure command, and job count:
 
-**Step 0 — Bugzilla account (start now; 24h lead time).**
-Try https://gcc.gnu.org/bugzilla/createaccount.cgi. The live page says:
-"Because of spam, account creation through this form is restricted. If
-creating an account fails, contact gcc-bugzilla-account-request@gcc.gnu.org
-to request a GCC Bugzilla account. You should receive a response within
-24 hours." If the form refuses bjorn.pagen@alpha.school, send that email.
+```text
+/src/configure --prefix=/work/install --disable-nls \
+  --enable-checking=release --with-system-zlib
+make bootstrap -j10
+make -k check -j10
+```
 
-**Step 0b — mailing-list prep (optional but recommended).**
-Posting to gcc-patches@gcc.gnu.org works without subscribing, but
-unsubscribed senders go through spam blocklists; subscribing first avoids
-a silent drop. Plain-text mail only (no HTML). Lists cap messages at
-400kB on gcc-patches (ours is 6.5kB). The posting address becomes
-permanently public — archives are never edited.
+Both default-language bootstraps completed on
+`aarch64-unknown-linux-gnu`. The normal and strict full-suite comparisons
+both report no `Tests that now fail, but worked before` section, but exit 1
+because the runs are not fully comparable: the baseline timed out while
+building `analyzer_kernel_plugin.so`; the patched run reached its tests; and
+resource-sensitive LTO/ASan option variants appeared in only one run.
 
-**Step 1 — file the fixincludes Bugzilla PR.**
-Product `gcc`, Component `other` (no dedicated fixincludes component;
-triagers reassign freely), Version `16.1.0`. Title and body: the SUBMIT's
-Title/Body sections. Note the assigned number — call it PRnnnnn.
+The five entries under the comparator's `New tests that FAIL` heading are
+actually GCC tests marked `XFAIL`, all gated by the analyzer plugin that the
+baseline failed to build. We reran that plugin plus all four source files
+behind those entries, serially, against both compilers. Each result is exactly
+28 expected passes and 5 expected failures, and GCC's comparator reports no
+differences (exit 0). This is the defensible result to describe to reviewers;
+the full raw comparison must remain available if requested.
 
-**Step 2 — email the patch to gcc-patches@gcc.gnu.org.**
-- Subject WITHOUT a PR: `[PATCH] fixincludes: darwin
-  sys/_types/_rsize_t.h breaks under GCC -fmodules` (69 chars after the
-  classifier — at the 75 limit).
-- Subject WITH the PR from step 1 — **the long form busts the 75-char
-  limit**, use the short summary instead:
-  `[PATCH] fixincludes: define rsize_t under GCC -fmodules on darwin [PRnnnnn]`
-  and put the full `PR other/nnnnn` in the commit body so Bugzilla links
-  the post.
-- Attach `0001-…rsize_t….patch` as `text/x-patch` (or send with
-  `git send-email`); never paste the diff into a wrapping mail client.
-- Body: the SUBMIT's Body + "Testing done" sections, plus: "I do not
-  have write access to the GCC repository."
-- No response after ~two weeks: one polite ping on the same thread with
-  a brief summary and the archive URL of the original post.
+## Exact send order
 
-**Step 3 — file the defaulted-friend-`operator==` ICE.**
-Product `gcc`, Component `c++`, Version `16.1.0`, keyword
-`ice-on-valid-code`, summary from the SUBMIT Title (`[modules]` prefix
-included). Paste the Body; attach `a.cc` and `b.cc` **individually** (the
-sanctioned multi-file exception — never an archive); add "See Also"
-PR 122822; the dupe-search list and trunk status are already in the body.
+1. Obtain a GCC Bugzilla account. If self-service registration fails, email
+   `gcc-bugzilla-account-request@gcc.gnu.org`.
+2. File the fixincludes report from its `SUBMIT.md`, Product `gcc`, Component
+   `target`, Version `16.1.0`. Record the assigned number as `NNNNN`.
+3. In the GCC clone, amend the actual patch commit:
+   - change its subject to
+     `fixincludes: Fix rsize_t with Darwin modules [PRNNNNN]`;
+   - add `PR target/NNNNN` immediately above `fixincludes/ChangeLog:`;
+   - keep `Signed-off-by` intact;
+   - regenerate the format-patch;
+   - rerun `git_check_commit.py`, `check_GNU_style.sh`, and `git am` on a
+     clean current-trunk worktree.
+4. Email the regenerated format-patch to `gcc-patches@gcc.gnu.org`; its
+   generated subject will be
+   `[PATCH] fixincludes: Fix rsize_t with Darwin modules [PRNNNNN]`.
+   Send plain text or `text/x-patch`, state the tested host/target and exact
+   results, and say: “I do not have write access to the GCC repository.” CC
+   Bruce Korb, Iain Sandoe, and Mike Stump using the addresses in the current
+   GCC `MAINTAINERS` file.
+5. Do **not** file the defaulted-friend report or add a redundant comment.
+   PR 126223 comment 3 already contains the same minimal `operator==` case and
+   matrix.
+6. File the GMF report. Attach `gmf-extern-inline-repro.tar.gz`. The
+   warning-free `q.h` + `repro-include.cc` pair is the primary testcase;
+   `repro.cc` is only a secondary reduction.
+7. File the libstdc++ report last. Replace `PR target/NNNNN` with the real
+   fixincludes PR. Cross-reference PR 124268, PR 124554, and the patch archive
+   URL. The report intentionally preserves the supported-target bootstrap
+   rationale and challenges only the invalid installed metadata.
+8. File the Apple Feedback draft only after the GCC patch is actually posted,
+   or change “has been submitted” to “has been prepared.”
 
-**Step 4 — file the GMF redeclaration ICE.**
-Same fields. Paste the Body; attach `repro.cc` (and optionally `q.h` +
-`repro-include.cc` as the no-warning variant). The directory name
-(`consteval-redecl`) is historical; the report text is the truth.
+If a patch receives no response after about two weeks, send one polite reply
+on the same thread with a brief summary and the archive URL. A revised patch
+starts a new thread and explains what changed.
 
-**Step 5 — file the libstdc++ silent-fallback report, last.**
-Product `gcc`, Component `libstdc++`, Version `16.1.0`. Paste the Body;
-cite the fixincludes PR number from step 1 and the gcc-patches archive
-URL from step 2; cite Homebrew/homebrew-core#289142 as shipped-to-users
-corroboration. Expect discussion — it asks maintainers to change a
-deliberate fallback; the three-option remediation ladder in the body is
-the negotiating position.
+## Existing Bugzilla comment-only updates
 
-**Step 6 — comment drops.**
-On PR 124197: confirmed on GCC 16.1.0; fires once per expanded element
-(not N−1); also triggers via reflection/`consteval` expansion; CC
-yourself. On PR 71962: reflection-era impact — UBSan refuses
-constant-folding of `std::string(ptr, size)` over vague-linkage storage,
-which breaks consteval string machinery under `-fsanitize=undefined`;
-the iterator-pair construction works around it; note interest in the
-2026-08-05 candidate patch.
+- PR 124197: report the verified `template for` / `-Wshadow` behavior on GCC
+  16.1.0, including the reflection variant and that it fires once per expanded
+  element. Do not open a duplicate.
+- PR 71962: add the reflection/consteval impact of UBSan refusing to
+  constant-fold `std::string(ptr, size)` over vague-linkage storage, and note
+  the candidate patch attached on 2026-08-05. Do not open a duplicate.
 
-**Step 7 — after the dust settles.**
-Answer triage with the variant matrices already in the SUBMITs. When a
-fix lands upstream for any item, its in-tree workaround pin (PINS.md,
-both repos) has a tombstone pointing back here — delete workaround and
-pin together.
+## Deliberately not filed
+
+- The partition-BMI `std::expected` corruption lacks a standalone testcase;
+  its reduction ledger stays with the workaround pin in bumbledb.
+- clang-tidy `misc-unused-using-decls` on `export using` is already fixed by
+  llvm/llvm-project#183638 (`ce6a3d9`).
+- `^^` on using-declarations and `inplace_vector::try_push_back` returning
+  `optional<T&>` conform to the adopted proposals and are not bugs.

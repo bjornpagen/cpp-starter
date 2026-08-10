@@ -2,6 +2,8 @@
 
 - **Area:** Developer Tools & Resources → SDKs
 - **Type:** Incorrect/Unexpected Behavior
+- **Timing:** File after the GCC patch is public; then change “has been
+  prepared” below to “has been submitted”.
 
 ## Title
 
@@ -38,14 +40,16 @@ The plain-typedef branch the header already contains is correct for
 every non-Clang compiler (and for Clang without modules), so the
 change is one predicate.
 
-Reproduction (Apple Silicon or Intel, macOS 15 SDK):
+Reproduction (verified on Apple Silicon with the macOS 26.2 SDK from Xcode
+26.3; the header predicate itself is architecture-independent):
 
-1. Install/build GCC 16.1 (e.g. the FSF release).
+1. Build GCC 16.1. On Apple Silicon this requires the Darwin arm64 port
+   series because upstream GCC has no aarch64-Darwin target.
 2. Compile with `-std=c++26 -fmodules` any TU that defines
    `__STDC_WANT_LIB_EXT1__` and includes `<string.h>`:
    error: 'rsize_t' has not been declared.
 
-For symmetry: a GCC-side fixincludes workaround has been submitted to
+For symmetry: a GCC-side fixincludes workaround has been prepared for
 the GCC project (rewriting the guard at GCC install time), because
 already-shipped SDKs cannot be fixed retroactively — but the header is
 the right place for the durable fix.

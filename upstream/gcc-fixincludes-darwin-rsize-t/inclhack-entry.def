@@ -1,6 +1,6 @@
 /*
  * Final fixincludes hack as it appears in the attached patch
- * (0001-fixincludes-darwin-sys-_types-_rsize_t.h-breaks-unde.patch),
+ * (0001-fixincludes-Fix-rsize_t-with-Darwin-modules.patch),
  * inserted in fixincludes/inclhack.def between darwin_private_extern and
  * darwin_stdint_1, matching the neighboring darwin hacks' conventions
  * (mach "*-*-darwin*", c_fix = format, bypass for idempotency).
@@ -9,9 +9,9 @@
  * unlike the production local fixinclude (fixed-header.h, which replaces
  * the header body), the upstream fix rewrites the guard to additionally
  * require __clang__, so the header's own plain-typedef branch is taken
- * under GCC and the file stays byte-identical for clang.  The bypass on
- * __clang__ makes the fix idempotent (verified: re-running fixincl on
- * fixed output makes no change).
+ * under GCC while Clang branch selection remains unchanged.  The bypass
+ * matches the corrected predicate, making the fix idempotent without
+ * skipping a header merely because it mentions __clang__ elsewhere.
  */
 
 /*
@@ -27,7 +27,8 @@ fix = {
     hackname  = darwin_rsize_t_modules;
     mach      = "*-*-darwin*";
     files     = sys/_types/_rsize_t.h;
-    bypass    = "__clang__";
+    bypass    = "defined\\(__clang__\\) && defined\\(__has_feature\\) && "
+		"__has_feature\\(modules\\)";
     select    = "defined\\(__has_feature\\) && __has_feature\\(modules\\)";
     c_fix     = format;
     c_fix_arg = "defined(__clang__) && defined(__has_feature) && "

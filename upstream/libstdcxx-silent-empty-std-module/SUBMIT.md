@@ -1,45 +1,47 @@
-# libstdc++: std module build failure silently installs an empty `bits/std.cc`
+# libstdc++: failed module fallback installs invalid interface metadata
 
-- **Where:** GCC Bugzilla, component `libstdc++`
-- **Kind:** bug report (build-system behavior; no code patch attached)
-- **Verified:** GCC 16.1.0, built from source on aarch64-apple-darwin24
-  (2026-08-08). The fallback is confirmed still present on trunk master
-  @ 0621cf67366 (2026-08-09). The line numbers below are trunk's.
-- **Duplicate search (GCC Bugzilla, 2026-08-09):** We searched via the
-  Bugzilla REST quicksearch for `summary:"std module"`, `summary:std.cc`,
-  `summary:modules.json`, `summary:"import std"`, `summary:"std module"
-  empty`, `summary:"module initialization"`, and full-text
-  `"Cannot compile std module"`. Nearest hits: PR 125460 (std.cc fails
-  to compile with -ffreestanding — that failure would trigger this
-  fallback, but the report covers the compile failure, not the
-  fallback/install behavior), PR 124714 (std.cc long double), and
-  PR 119266 (modules.json wrong path). **No duplicate found as of
-  2026-08-09.**
-- **Verdict:** SEND
-- **Independent corroboration (cite in the report):**
-  Homebrew/homebrew-core issue #289142 (2026-06-21). The gcc 16.1.0
-  bottle for Apple Silicon ships 1-byte `std.cc`/`std.compat.cc` files,
-  referenced by `libstdc++.modules.json`. CMake fails with "is of type
-  CXX_MODULES but does not provide a module interface unit or
-  partition". Homebrew closed it "not planned", as needing an upstream
-  report. No upstream report was filed.
+- **Where:** GCC Bugzilla, component `libstdc++`, Version `17.0`
+- **Known to fail:** `16.1.0`, `17.0`. Leave Known to work empty; the
+  fallback was introduced during GCC 16 development and no earlier release
+  has the same installation path.
+- **Kind:** build/install consistency report; no patch attached
+- **Verified:** the fallback and unconditional install rules are still present
+  on fetched upstream master @ 8412da1ce39 (2026-08-10), at
+  `libstdc++-v3/src/c++23/Makefile.am:33-35,103-130`.
+- **Prior art:** PR 124268 introduced the fallback deliberately in
+  r16-8714-g9d02b118ee1. Its commit message calls it a temporary kluge to
+  remove during GCC 17 stage 1. PR 124554 comments 13-17 confirm that a
+  successful bootstrap after `std.cc` fails is intentional. This report does
+  not ask to regress that supported-target behavior; it covers the invalid
+  artifacts installed afterward.
+- **Duplicate search (2026-08-10):** nearest reports are PR 124268 (module
+  initialization symbols), PR 124554 (the target failure that motivated the
+  fallback), PR 125460 (a separate way `std.cc` can fail), PR 124714 (a
+  `std.cc` compile failure), and PR 119266 (a manifest path error). None
+  covers empty installed interface units still advertised by the manifest.
+- **Independent user impact:** Homebrew/homebrew-core#289142 documents a
+  shipped GCC 16.1.0 package with one-byte `std.cc` and `std.compat.cc` files
+  referenced by `libstdc++.modules.json`; CMake rejects them because they do
+  not provide module interface units.
+- **Verdict:** SEND, after the fixincludes PR so the concrete Darwin trigger
+  can be cross-referenced.
 
 ## Title
 
 ```
-libstdc++: failed std module compile installs 1-byte bits/std.cc with exit 0
+libstdc++: module fallback installs empty interface units referenced by manifest
 ```
 
 ## Body (paste)
 
-`libstdc++-v3/src/c++23/Makefile.am` contains a deliberate fallback.
-When the generated `std.cc` / `std.compat.cc` (the `import std` module
-sources) fail to compile, the recipe empties the source file and
-compiles the empty file instead. On current master (0621cf67366,
-2026-08-09) this is the `std.lo` rule at Makefile.am:103-109. The same
-pattern repeats for `std.o`, `std.compat.lo`, and `std.compat.o` at
-lines 110-130. The `echo > $<.tmp` fallback lines are 107, 114, 121,
-and 128:
+The module-object fallback added for PR 124268 deliberately permits a GCC
+bootstrap to continue when `std.cc` or `std.compat.cc` cannot be compiled.
+That behavior was needed for targets affected by PR 124554, and comments
+13-17 on that PR confirm that successful bootstrap is intentional.
+
+The fallback has a separate install-time consequence. On current trunk
+(8412da1ce39, 2026-08-10), each failure recipe overwrites the generated
+module interface with an empty file before compiling the fallback object:
 
 ```make
 std.lo: std.cc
@@ -51,65 +53,63 @@ std.lo: std.cc
 	fi
 ```
 
-The recipe does print "Cannot compile std module" to stderr. But the
-build then completes with exit 0, so nothing fails. In a parallel build
-log, those two lines scroll past. The fallback empties the file in the
-build tree, so `make install` then installs the 1-byte `bits/std.cc` /
-`bits/std.compat.cc` (`includebits_DATA`, Makefile.am:35). It also
-installs `libstdc++.modules.json`, which points at them
-(`toolexeclib_DATA`, Makefile.am:33). Every consumer discovers the
-breakage much later, with a confusing failure: CMake's import-std
-support reports that the scanned module sources do not provide a module
-interface unit, or user code simply finds no `std` module to import.
-Nothing at install time says the std module is broken. Nothing
-machine-checkable at build time says it either.
+The same pattern appears in the `std.o`, `std.compat.lo`, and
+`std.compat.o` rules at `libstdc++-v3/src/c++23/Makefile.am:103-130`.
+The install lists are unconditional:
 
-We hit this on aarch64-apple-darwin24. There, the module compile fails
-for an unrelated SDK-header reason (fixincludes patch sent separately).
-The toolchain built and installed green, and `import std;` was broken.
-We found the cause only when we diffed the installed `bits/std.cc`
-(1 byte) against the build tree. The same failure mode shipped to users
-in the Homebrew gcc 16.1.0 bottle for Apple Silicon
-(Homebrew/homebrew-core#289142): 1-byte module sources, referenced by
-the installed `libstdc++.modules.json`. Homebrew closed that issue as
-needing an upstream report.
+```make
+toolexeclib_DATA = libstdc++.modules.json
+includebits_DATA = std.cc std.compat.cc
+```
 
-How to reproduce (aarch64-apple-darwin24, macOS 15 SDK):
+Consequently a handled module compile failure leaves a one-byte `std.cc`
+and/or `std.compat.cc`, exits successfully, installs those empty files, and
+also installs a manifest that advertises them as C++ module sources. The
+fallback therefore preserves bootstrap, but the resulting installation
+claims to provide module interface units that do not exist.
 
-1. Build GCC 16.1.0 from release sources on darwin. There, the std
-   module compile fails for an unrelated SDK-header reason (fixincludes
-   patch posted separately). Any platform where `std.cc` fails to
-   compile reproduces the fallback the same way; PR 125460's
-   -ffreestanding failure is another trigger. Configure:
-   `../gcc-16.1.0/configure --prefix=$PREFIX --enable-languages=c,c++
-   --disable-nls --enable-checking=release --program-suffix=-16
-   --with-system-zlib --build=aarch64-apple-darwin24
-   --with-sysroot=<Xcode MacOSX.sdk>`. Then `make && make install`.
-2. The libstdc++ build prints "Cannot compile std module" twice to
-   stderr, mid-scroll in the parallel log. The build completes with
-   exit 0.
-3. Run `wc -c $PREFIX/.../c++/16.1.0/bits/std.cc`. The result is
-   1 byte, and the installed `libstdc++.modules.json` references the
-   file. A compile per the manifest (`g++-16 -std=c++26 -fmodules
-   -fsearch-include-path bits/std.cc`) produces no usable std module.
+This is not hypothetical downstream behavior. The GCC 16.1.0 Homebrew
+package for Apple Silicon shipped one-byte `bits/std.cc` and
+`bits/std.compat.cc` files referenced by `libstdc++.modules.json`
+(Homebrew/homebrew-core#289142). CMake later rejected the files with:
 
-Environment of the affected build:
-- g++-16 (GCC) 16.1.0
-- Build/host/target: aarch64-apple-darwin24 (native)
-- Configured with: ../gcc-16.1.0/configure --prefix=$HOME/.gcc/versions/16.1.0
-  --enable-languages=c,c++ --disable-nls --enable-checking=release
-  --program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
-  --with-sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
-- Bugzilla Version field: 16.1.0. The Makefile.am line numbers cited
-  above are trunk's @ 0621cf67366, re-verified 2026-08-09.
+```
+is of type CXX_MODULES but does not provide a module interface unit or partition
+```
 
-Requested behavior — any of:
+The Darwin module failure that triggered that package state is reported
+separately as PR target/NNNNN. The install inconsistency is generic: any
+handled failure in these four recipes produces the same artifacts. PR 124554
+also exercised this fallback on GCC-supported offload targets; its discussion
+shows why failing the whole bootstrap is not necessarily the right remedy.
 
-1. fail the build loudly when the std module does not compile (best), or
-2. gate the fallback behind an explicit configure option, or
-3. at minimum, do not install the empty sources and the manifest entry.
-   An absent std module diagnoses far better than a present-but-empty
-   one.
+The r16-8714-g9d02b118ee1 commit message said: "Fixing PR124554 and removing
+this kluge should be done for GCC 17 in stage 1." The fallback is still
+present on current GCC 17 trunk even though PR 124554 was fixed.
 
-A build that installs a broken `import std` with exit 0 is a trap for
-every platform where the module compile regresses.
+Expected behavior: retaining a successful bootstrap must not result in an
+installation that advertises empty files as module interfaces. Suitable
+outcomes include removing the temporary fallback now that its motivating
+target bug is fixed, or preserving the fallback object while omitting the
+unavailable interface units and their manifest entries from installation.
+Compiling a distinct empty temporary translation unit would also avoid
+destroying the generated module source, but the manifest must only advertise
+interfaces the installation actually provides.
+
+Observed environment that exposed the installed state:
+
+- GCC 16.1.0 release sources plus the documented out-of-tree Darwin arm64
+  port, native aarch64-apple-darwin24
+- macOS 26.2 SDK, Xcode 26.3
+- configured with `../gcc-16.1.0/configure
+  --prefix=$HOME/.gcc/versions/16.1.0 --enable-languages=c,c++
+  --disable-nls --enable-checking=release --program-suffix=-16
+  --with-system-zlib --build=aarch64-apple-darwin24
+  --with-sysroot=<Xcode MacOSX.sdk>`
+- installed `bits/std.cc` and `bits/std.compat.cc`: one byte each
+- installed `libstdc++.modules.json`: references both empty files
+
+The report is based primarily on the target-independent upstream make rules
+and their documented GCC-supported use in PR 124554. The Darwin build and
+Homebrew issue are corroborating examples of the bad installed state, not a
+request to support an unofficial GCC target.
