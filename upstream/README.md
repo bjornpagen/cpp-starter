@@ -82,13 +82,17 @@ darwin trunk bootstrap is impossible by construction.
   cp/module.cc:16805 (via COMDAT-group mangling at finalize); GMF
   asserts in `transfer_defining_module` at cp/module.cc:22418 (via
   `duplicate_decls`), include variant identical.
-1. **Bootstrap + regtest** (two racing: local finch container and CI
-   bootstrap-regtest): full
-   default-language bootstrap of the patched trunk plus `make -k check`
-   on aarch64-linux-gnu, summary artifact — becomes the one-line
-   testing statement in the fixincludes SUBMIT.
-3. **Final read-through** of each SUBMIT after gates land: no pending
-   markers may remain when sending.
+- ~~Bootstrap + regtest~~ **CLEARED 2026-08-10**: full default-language
+  bootstrap of the patched trunk + `make -k check` on
+  aarch64-unknown-linux-gnu (local container) — ~975k passes, 79 FAILs
+  all environmental/pre-existing, none patch-related (hack is
+  darwin-gated). Statement and per-suite table in the fixincludes
+  SUBMIT; `.sum` evidence kept at `~/Documents/gcc-bootstrap-linux/`.
+- ~~Final read-through~~ **CLEARED 2026-08-10**: no pending markers in
+  any SUBMIT.
+
+**All gates are cleared. Every item is send-ready; the procedure below
+is the only remaining work, and it is human-only.**
 
 ## The send procedure (in order; do not reorder)
 

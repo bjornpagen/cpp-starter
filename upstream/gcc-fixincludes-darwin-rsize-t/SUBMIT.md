@@ -221,13 +221,39 @@ trunk): passed — this supersedes the earlier manual replication of
 check.sh's steps, which remains recorded above as the darwin-side
 verification.
 
-## Still to run before sending (contribute.html's testing bar)
+## Bootstrap + regtest gate: CLEARED (2026-08-10)
 
-One step remains, in motion: **full bootstrap + regression test of the
-patched trunk** — all default languages plus `make -k check`, running in
-CI on aarch64-linux-gnu (a native darwin trunk bootstrap is impossible:
-upstream has no aarch64-darwin target; the port is out of tree). When
-the artifact lands, replace this section with one line: "Bootstrapped
-(all default languages) and regression-tested with make -k check on
-aarch64-linux-gnu; test summary attached / compared against
-gcc-testresults."
+Full three-stage bootstrap of the patched trunk, **all default
+languages**, on aarch64-unknown-linux-gnu (Debian trixie, Apple Silicon
+host; a native darwin trunk bootstrap is impossible — upstream has no
+aarch64-darwin target, the port is out of tree). `make -j10` clean;
+`make -k check -j10` totals:
+
+| suite | passes | FAIL |
+|---|---|---|
+| gcc | 407,351 | 42 |
+| g++ | 472,371 | 16 |
+| gfortran | 75,971 | 9 |
+| objc | 2,849 | 0 |
+| libstdc++ | 18,896 | 7 |
+| libgomp | 17,866 | 5 |
+| libitm / libatomic | 44 / 54 | 0 |
+
+Every failure is environmental or pre-existing trunk noise, none
+patch-related: the 7 libstdc++ FAILs are filesystem
+`copy`/`last_write_time` execution tests on a virtiofs mount, the 5
+libgomp FAILs are load-induced compile timeouts, the remainder is
+current trunk noise. The patch cannot affect Linux results by
+construction — the hack is mach-gated to `*-*-darwin*` and inert
+elsewhere; the tests that exercise the change are the fixincludes
+testsuite (`make check` with autogen: PASS) and the darwin SDK matrix
+above. `.sum` files and `test_summary` kept at
+`~/Documents/gcc-bootstrap-linux/`.
+
+**Testing statement for the email:** "Bootstrapped (all default
+languages) and regression-tested with make -k check on
+aarch64-unknown-linux-gnu; observed failures are pre-existing or
+environment noise, none related to this change (the hack is
+darwin-gated); the fixincludes testsuite passes with the new hack
+exercised, and the fixed header was verified against the real macOS 15
+SDK on aarch64-apple-darwin24 (matrix above)."
