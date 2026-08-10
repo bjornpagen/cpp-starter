@@ -1,0 +1,21 @@
+---
+MainSourceFile:  '/tmp/tidy-module-repro/v1_export_using_function.cc'
+Diagnostics:
+  - DiagnosticName:  misc-unused-using-decls
+    DiagnosticMessage:
+      Message:         'using decl ''bdb_open'' is unused'
+      FilePath:        '/tmp/tidy-module-repro/v1_export_using_function.cc'
+      FileOffset:      141
+      Replacements:    []
+    Notes:
+      - Message:         remove the using
+        FilePath:        '/tmp/tidy-module-repro/v1_export_using_function.cc'
+        FileOffset:      141
+        Replacements:
+          - FilePath:        '/tmp/tidy-module-repro/v1_export_using_function.cc'
+            Offset:          133
+            Length:          18
+            ReplacementText: ''
+    Level:           Warning
+    BuildDirectory:  '/tmp/tidy-module-repro'
+...
