@@ -1,18 +1,26 @@
 # GCC ICE: GMF variable declared `extern`, then defined `inline` — cc1plus segfault
 
 - **Where:** GCC Bugzilla, component `c++`, Version `16.1.0`, keywords `ice-on-valid-code`; "[modules]" in the summary
-- **Kind:** bug report with verified 4-line repro (`repro.cc`); `q.h` + `repro-include.cc` is the same bug via a real `#include`; `repro-stdexec.cc` is the original 12-line reduction from stdexec, kept for provenance
-- **Verified:** official FSF `gcc:16.1.0` images, aarch64-linux-gnu AND
-  x86_64-linux-gnu (2026-08-09, two independent environments: local
-  container + CI) — symbolic backtrace obtained (`transfer_defining_module`
-  ← `duplicate_decls`); plus the darwin-arm64 port build, re-verified
-  cold 2026-08-09 with all variant claims re-tested individually
+- **Kind:** bug report with verified 4-line repro (`repro.cc`). `q.h` +
+  `repro-include.cc` shows the same bug via a real `#include`.
+  `repro-stdexec.cc` is the original 12-line reduction from stdexec,
+  kept for provenance.
+- **Verified:** official FSF `gcc:16.1.0` images, on aarch64-linux-gnu
+  AND x86_64-linux-gnu (2026-08-09, two independent environments: local
+  container + CI). A symbolic backtrace was obtained
+  (`transfer_defining_module` ← `duplicate_decls`). Also verified on
+  the darwin-arm64 port build (re-verified cold, 2026-08-09; every
+  variant claim re-tested individually).
 - **Verdict:** SEND
-- **Note:** during re-verification the earlier claim "the consteval call operator is load-bearing" was found to be **false** and the reduction went further: no class, no consteval, no namespace needed. The directory name predates this; the bug is a GMF extern-then-inline variable redeclaration.
+- **Note:** re-verification showed the earlier claim "the consteval
+  call operator is load-bearing" was **false**. The reduction then went
+  further: no class, no consteval, no namespace is needed. The
+  directory name predates this. The bug is a GMF extern-then-inline
+  variable redeclaration.
 
 ## Duplicate search (GCC Bugzilla, 2026-08-09)
 
-Quicksearch queries run, all with zero relevant results:
+We ran these quicksearch queries. All returned zero relevant results:
 `summary:"global module fragment"` (1 hit, a -Wglobal-module suppression
 complaint, PR 125704 — unrelated), `summary:GMF`,
 `summary:inline summary:module summary:ICE`,
@@ -29,9 +37,9 @@ all-text `stdexec`. **No duplicate found.**
 
 ## Body (paste)
 
-A variable first declared non-inline and then defined `inline` in the
-global module fragment segfaults cc1plus at the definition. Complete
-4-line testcase (no includes; the file is its own preprocessed source):
+Declare a variable non-inline in the global module fragment. Then define
+it `inline`. cc1plus segfaults at the definition. The complete 4-line
+testcase (no includes; the file is its own preprocessed source):
 
 ```cpp
 module;
@@ -73,19 +81,20 @@ Please include the complete backtrace with any bug report.
 See <https://gcc.gnu.org/bugs/> for instructions.
 ```
 
-The crash is in `transfer_defining_module`, reached from
-`duplicate_decls` when the inline definition is pushed over the earlier
-non-inline declaration. The identical ICE with the same frames
-(addresses differ, e.g. `transfer_defining_module` at 0x945a64)
-reproduces on x86_64-linux-gnu with the same official image. It also
-reproduces on aarch64-apple-darwin24 with GCC 16.1.0 built from the FSF
-release tarball plus the darwin-arm64 port series (upstream has no
-aarch64-darwin target); that build prints no backtrace
-(`--enable-checking=release`, stripped cc1plus) — under a debugger the
-crash there is EXC_BAD_ACCESS reading address 0x0.
+The crash is in `transfer_defining_module`. It is reached from
+`duplicate_decls`, when the inline definition is pushed over the earlier
+non-inline declaration. The identical ICE reproduces on x86_64-linux-gnu
+with the same official image. The frames are the same; only the
+addresses differ (for example, `transfer_defining_module` at 0x945a64).
+The ICE also reproduces on aarch64-apple-darwin24, with a GCC 16.1.0
+built from the FSF release tarball plus the darwin-arm64 port series
+(upstream has no aarch64-darwin target). That build prints no backtrace:
+it is built with `--enable-checking=release` and its cc1plus is
+stripped. Under a debugger, the crash there is EXC_BAD_ACCESS at
+address 0x0.
 
 The `-Wglobal-module` warning is an artifact of the hand-inlined
-reduction only; the identical ICE occurs, without that warning, when the
+reduction only. The identical ICE occurs, without that warning, when the
 two lines arrive via a real header:
 
 ```cpp
@@ -105,20 +114,19 @@ In file included from repro-include.cc:2:
 q.h:2:22: internal compiler error: Segmentation fault
 ```
 
-(same `transfer_defining_module` backtrace; no `-Wglobal-module`
-warning, confirming the warning is not load-bearing — also verified
-directly: `-Wno-global-module` still ICEs.)
+The backtrace is the same (`transfer_defining_module`), and there is no
+`-Wglobal-module` warning. So the warning is not load-bearing. We also
+verified this directly: `-Wno-global-module` still ICEs.
 
-The code is valid: the first declaration is not a definition, the
+The code is valid. The first declaration is not a definition. The
 definition adds `inline`, and no use precedes the inline declaration, so
-[dcl.inline] is satisfied; the variable keeps external linkage from the
+[dcl.inline] is satisfied. The variable keeps external linkage from the
 `extern const` declaration ([basic.link]). The same two lines compile
 fine in a non-module TU.
 
-Triage matrix (each variant re-verified individually on 16.1.0; the
-matrix was run on the darwin build — same front end — and the two
-transcript variants above additionally confirmed on the official Linux
-builds):
+Triage matrix. Each variant was re-verified individually on 16.1.0. The
+matrix ran on the darwin build (same front end). The two transcript
+variants above were additionally confirmed on the official Linux builds:
 
 | variant | result |
 |---|---|
@@ -132,18 +140,18 @@ builds):
 | same two lines in a plain non-module TU | OK |
 | function analogue: `void f();` + `inline void f() {}` in GMF | OK |
 
-So the trigger is exactly: *variable*, non-inline declaration, then
-inline definition, in the global module fragment.
+So the trigger is exactly this: a *variable*, a non-inline declaration,
+then an inline definition, in the global module fragment.
 
-Real-world impact: this declare-then-define + `inline constexpr` object
-idiom is how libraries define customization point objects. NVIDIA
-stdexec's `execution.hpp` declares `forwarding_query` before defining
-its type and the object (`repro-stdexec.cc` in this report is the
-12-line reduction of that), so any module unit whose GMF includes
-stdexec ICEs the compiler.
+Real-world impact: libraries use this declare-then-define
+`inline constexpr` object idiom to define customization point objects.
+NVIDIA stdexec's `execution.hpp` declares `forwarding_query` before it
+defines the type and the object. `repro-stdexec.cc` in this report is
+the 12-line reduction of that. As a result, any module unit whose GMF
+includes stdexec ICEs the compiler.
 
-Expected behavior: the TU compiles; `q` is usable from the GMF as in a
-non-module TU.
+Expected behavior: the TU compiles, and `q` is usable from the GMF as in
+a non-module TU.
 
 Environment (primary — official FSF release build, Docker library image
 `gcc:16.1.0`):
@@ -152,10 +160,10 @@ Environment (primary — official FSF release build, Docker library image
 - Configured with: /usr/src/gcc/configure --build=aarch64-linux-gnu
   --disable-multilib --enable-languages=c,c++,fortran,go
 
-Also reproduced (corroboration): aarch64-apple-darwin24, GCC 16.1.0
-built from the FSF release tarball plus the darwin-arm64 port series —
-the configuration the macOS package managers ship; noted because
-upstream trunk has no aarch64-darwin target. Configured with:
+Also reproduced (corroboration): aarch64-apple-darwin24, with GCC 16.1.0
+built from the FSF release tarball plus the darwin-arm64 port series.
+That is the configuration the macOS package managers ship. We note it
+because upstream trunk has no aarch64-darwin target. Configured with:
 ../gcc-16.1.0/configure --prefix=$HOME/.gcc/versions/16.1.0
 --enable-languages=c,c++ --disable-nls --enable-checking=release
 --program-suffix=-16 --with-system-zlib --build=aarch64-apple-darwin24
@@ -164,7 +172,7 @@ upstream trunk has no aarch64-darwin target. Configured with:
 Trunk status: **still fails on master** — 17.0.0 20260809
 (experimental), gcc-mirror master cloned 2026-08-09, aarch64-linux-gnu,
 `--disable-bootstrap` build with default (enabled) checking. Under
-checking the crash is the assertion:
+checking, the crash is this assertion:
 
 ```
 repro.cc:3:22: internal compiler error: in transfer_defining_module, at cp/module.cc:22418
@@ -183,8 +191,8 @@ repro.cc:3:22: internal compiler error: in transfer_defining_module, at cp/modul
 ```
 
 The include variant (`repro-include.cc` + `q.h`) fails the identical
-assertion at the same coordinates. So the release-build segfault is
-this checking assert: merging the inline definition over the earlier
-non-inline declaration (`duplicate_decls`) transfers the defining
-module between the two declarations, and `transfer_defining_module`
-asserts at module.cc:22418.
+assertion at the same coordinates. The release-build segfault is this
+checking assert. `duplicate_decls` merges the inline definition over the
+earlier non-inline declaration. That merge transfers the defining module
+between the two declarations, and `transfer_defining_module` asserts at
+module.cc:22418.
