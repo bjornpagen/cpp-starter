@@ -1,4 +1,4 @@
-/* PIN(gcc-gmf-stdexec-ice): plain TU — with unsafe/net.backend.cc, the repository's entire stdexec spelling surface; see PINS.md */
+/* PIN(gcc-gmf-stdexec-ice): the repository's one plain stdexec boundary; see PINS.md */
 #include <cstdint>
 #include <exception>
 #include <expected>
@@ -40,56 +40,61 @@ namespace ours {
  * computation must use this same environment, not env<>.
  */
 struct WaitEnv {
-	stdexec::run_loop* loop;
+	stdexec::run_loop& loop;
 
 	[[nodiscard]] auto query(stdexec::get_scheduler_t) const noexcept -> stdexec::run_loop::scheduler {
-		return loop->get_scheduler();
+		return loop.get_scheduler();
 	}
 
 	[[nodiscard]] auto query(stdexec::get_start_scheduler_t) const noexcept -> stdexec::run_loop::scheduler {
-		return loop->get_scheduler();
+		return loop.get_scheduler();
 	}
 
 	[[nodiscard]] auto query(stdexec::get_delegation_scheduler_t) const noexcept -> stdexec::run_loop::scheduler {
-		return loop->get_scheduler();
+		return loop.get_scheduler();
 	}
 };
 
+struct Pending {};
+struct Stopped {};
+
+template<class Tuple, class E>
+using WaitOutcome = std::variant<Pending, Stopped, std::expected<Tuple, E>>;
+
 template<class Tuple, class E>
 struct WaitState {
-	std::optional<std::expected<Tuple, E>> result;
-	bool stopped = false;
+	WaitOutcome<Tuple, E> outcome;
 	stdexec::run_loop loop;
 };
 
 template<class Tuple, class E>
 struct WaitReceiver {
 	using receiver_concept = stdexec::receiver_t;
-	WaitState<Tuple, E>* state;
+	WaitState<Tuple, E>& state;
 
 	template<class... Vs>
 	auto set_value(Vs&&... vs) noexcept -> void {
-		state->result.emplace(std::in_place, std::forward<Vs>(vs)...);
-		state->loop.finish();
+		std::ignore = state.outcome.template emplace<std::expected<Tuple, E>>(std::in_place, std::forward<Vs>(vs)...);
+		state.loop.finish();
 	}
 
 	auto set_error(E e) noexcept -> void {
-		state->result.emplace(std::unexpect, std::move(e));
-		state->loop.finish();
+		std::ignore = state.outcome.template emplace<std::expected<Tuple, E>>(std::unexpect, std::move(e));
+		state.loop.finish();
 	}
 
 	/** Unreachable under -fno-exceptions; reaching it is process failure. */
-	auto set_error(std::exception_ptr) noexcept -> void {
+	auto set_error(std::exception_ptr const&) noexcept -> void {
 		std::terminate();
 	}
 
 	auto set_stopped() noexcept -> void {
-		state->stopped = true;
-		state->loop.finish();
+		std::ignore = state.outcome.template emplace<Stopped>();
+		state.loop.finish();
 	}
 
 	[[nodiscard]] auto get_env() const noexcept -> WaitEnv {
-		return WaitEnv{&state->loop};
+		return WaitEnv{state.loop};
 	}
 };
 
@@ -110,13 +115,16 @@ template<class E, stdexec::sender Sndr>
 [[nodiscard]] auto wait(Sndr&& sndr) -> std::optional<std::expected<ValueTuple<Sndr>, E>> {
 	using Tuple = ValueTuple<Sndr>;
 	WaitState<Tuple, E> state;
-	auto op = stdexec::connect(std::forward<Sndr>(sndr), WaitReceiver<Tuple, E>{&state});
+	auto op = stdexec::connect(std::forward<Sndr>(sndr), WaitReceiver<Tuple, E>{state});
 	stdexec::start(op);
 	state.loop.run();
-	if (state.stopped) {
+	if (std::holds_alternative<Stopped>(state.outcome)) {
 		return std::nullopt;
 	}
-	return std::move(state.result);
+	if (!std::holds_alternative<std::expected<Tuple, E>>(state.outcome)) {
+		std::terminate();
+	}
+	return std::move(std::get<std::expected<Tuple, E>>(state.outcome));
 }
 
 }

@@ -20,7 +20,14 @@ using Greeting = std::expected<std::string, starter::GreetError>;
 [[nodiscard]] auto check_greeting_rejects_empty_name() -> CaseResult {
 	return CaseResult{
 	    .name = "greeting rejects an empty name",
-	    .passed = starter::greeting("") == std::unexpected(starter::GreetError::EmptyName),
+	    .passed = starter::greeting("") == std::unexpected(starter::GreetError{starter::GreetErrorKind::EmptyName}),
+	};
+}
+
+[[nodiscard]] auto check_greeting_error_classification() -> CaseResult {
+	return CaseResult{
+	    .name = "invalid greeting input is permanently classified",
+	    .passed = !starter::GreetError{starter::GreetErrorKind::EmptyName}.is_transient(),
 	};
 }
 
@@ -30,6 +37,7 @@ auto main() -> int {
 	auto const results = std::array{
 	    check_greeting_formats_name(),
 	    check_greeting_rejects_empty_name(),
+	    check_greeting_error_classification(),
 	};
 
 	auto failures = std::size_t{0};

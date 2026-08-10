@@ -91,8 +91,9 @@ add_test(NAME starter.httpd.smoke
 
 set_tests_properties(starter.httpd.smoke PROPERTIES TIMEOUT 120)
 
-# The executable spec of the production toolchain (feature-test macros,
-# reflection expansion statements, contracts macro).
+# The executable spec of the production library/compiler surface used by the
+# dialect: optional references, bounded containers, expected, reflection,
+# function_ref, and indirect value semantics.
 add_executable(starter_conformance_tests)
 
 target_sources(starter_conformance_tests

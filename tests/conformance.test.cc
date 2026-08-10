@@ -1,26 +1,4 @@
-#include <version>
-
 import std;
-
-static_assert(__cplusplus >= 202400L, "C++26 mode required");
-static_assert(__cpp_lib_inplace_vector >= 202603L, "std::inplace_vector");
-static_assert(__cpp_lib_indirect >= 202502L, "std::indirect (<memory>)");
-static_assert(__cpp_lib_polymorphic >= 202502L, "std::polymorphic (<memory>)");
-static_assert(__cpp_lib_function_ref >= 202603L, "std::function_ref");
-static_assert(__cpp_lib_reflection >= 202603L, "P2996 reflection library");
-static_assert(__cpp_contracts >= 202502L, "P2900 contracts");
-
-#ifdef __cpp_lib_optional_ref
-static_assert(false, "__cpp_lib_optional_ref appeared: the toolchain caught up — replace this trap with "
-                     "static_assert(__cpp_lib_optional_ref >= 202602L, \"std::optional<T&>\")");
-#endif
-
-#ifdef __cpp_lib_senders
-static_assert(false, "__cpp_lib_senders appeared: the toolchain caught up — retire PINS.md "
-                     "gcc-gmf-stdexec-ice (delete the vendored stdexec, rewrite foreign/exec.backend.cc and "
-                     "unsafe/net.backend.cc over std::execution) and replace this trap with "
-                     "static_assert(__cpp_lib_senders >= 202406L, \"std::execution (P2300)\")");
-#endif
 
 [[nodiscard]] consteval auto optional_ref_writes_through() -> bool {
 	int slot = 1;

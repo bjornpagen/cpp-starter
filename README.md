@@ -1,124 +1,109 @@
 # cpp-starter
 
-A starter template for a deliberately small C++26 dialect — modules-only,
-exception-free, RTTI-free, structural, value-oriented, reflection-driven —
-whose flagship is a working **multicore HTTP server built on sender/receiver
-(`std::execution`)**, years before the standard library ships it.
+A starter template for a deliberately small C++26 systems dialect: modules
+only, exception-free, RTTI-free, structural, value-oriented,
+reflection-driven, ownership-explicit, and bounded at every wire boundary.
+The current machine boundary is intentionally Darwin-only.
 
-**`AGENTS.md` is the normative document** for humans and coding agents. When
-this repository offers one mechanism for a concept, the alternatives are
-forbidden — read it before writing any code.
+[`AGENTS.md`](AGENTS.md) is normative. The build enforces the pinned
+toolchain tuple; this document deliberately does not duplicate its versions.
 
-## Requirements
+## Memory and I/O model
 
-Bring your own toolchain; install it however you like. Versions are enforced
-at configure time; the table is informative.
+The project adopts the skalibs ownership and event-loop shape in modern C++:
 
-| Tool | Version | Used for |
-|---|---|---|
-| GCC | 16.1.x | production compiler, found as `g++-16` |
-| CMake | 4.2.x | build description |
-| Ninja | 1.13+ | build execution |
-| LLVM (clang++, clang-tidy, clang-scan-deps) | 22 | `lint` preset only |
+- every allocation and resource has exactly one RAII owner,
+- public parsers return owning values,
+- views are synchronous and call-scoped,
+- readiness is returned as data into caller-owned storage,
+- one loop owns and mutates every registered resource,
+- kernel user data contains integer slot generations, never addresses,
+- connection count, request size, response size, and deadlines are bounded.
 
-Tools are referenced by bare name and found on `PATH`. If yours live
-elsewhere, write a gitignored `CMakeUserPresets.json` that inherits a preset
-and overrides `CMAKE_CXX_COMPILER` (CMake merges it automatically).
+The HTTP server is a single-threaded bounded reactor. It multiplexes up to the
+named `max_connection_count` with `kevent64`, owns every descriptor and buffer
+in a slot, and uses `{slot, generation}` tokens to reject stale events. SIGINT
+and SIGTERM are events in the same loop. There are no worker threads, callback
+waiters, opaque self pointers, or shared mutable state.
 
-## The server
+Application handlers are compile-time-selected stateless callables: they
+receive `Request const&` and return `std::expected<Response, E>`, with an
+application-specific error. This intentionally avoids storing an erased
+callback or an application-state borrow in the reactor. A handler runs inline
+on the owner loop and must be bounded and nonblocking. The public writer
+returns owned bounded bytes and derives HTTP framing; the quarantine trampoline
+alone copies that value into the fixed reactor buffer.
+
+## Build and run
+
+Bring the pinned tools on `PATH`; configure rejects every other tuple. Local
+paths belong in a gitignored `CMakeUserPresets.json`.
 
 ```sh
 cmake --preset dev
 cmake --build --preset dev
-./build/dev/examples/starter_httpd    # binds an ephemeral port, prints "listening <port>"
-curl localhost:<port>/hello           # responses carry the worker id — watch it
-curl localhost:<port>/hello           # spread across cores under concurrent load
+ctest --preset dev
+./build/dev/examples/starter_httpd
 ```
 
-Thread-per-core, share-nothing: N workers, each owning its own kqueue
-io-context and its own `SO_REUSEPORT` listener; per-connection accept →
-read → parse → respond, composed as senders; zero cross-worker state, zero
-locks outside the vendored thread pool; clean SIGINT shutdown. The HTTP/1.1
-parser is pure dialect (`string_view` in, `expected` out).
-
-## Build and test
+The server prints `listening <port>` and blocks in its owner-driven loop:
 
 ```sh
-cmake --preset dev && cmake --build --preset dev && ctest --preset dev
+curl http://127.0.0.1:<port>/hello
 ```
+
+Send SIGINT or SIGTERM for a clean shutdown.
 
 | Preset | Purpose |
 |---|---|
-| `dev` | debug development build |
+| `dev` | warnings-as-errors development build |
 | `release` | optimized production build |
-| `asan-ubsan` | AddressSanitizer + UndefinedBehaviorSanitizer (the httpd smoke runs under it) |
-| `tsan` | ThreadSanitizer (never combined with ASan); Linux only — GCC ships no TSan runtime on arm64 macOS |
-| `lint` | Clang graph over the Clang-parseable remainder (the starter module is GCC-only as a unit); clang-tidy runs during the build and any warning is an error |
+| `asan-ubsan` | AddressSanitizer + UndefinedBehaviorSanitizer |
+| `lint` | Clang/clang-tidy over the reflection-free quarantine graph |
+
+A ThreadSanitizer preset is intentionally absent: the supported server graph
+is single-threaded and the pinned macOS GCC has no usable arm64 TSan runtime.
+The policy forbids advertising an empty or unbuildable check.
 
 ## Layout
 
-One named module (`starter`) per component; internals are partitions, one
-`.cc` file per concern. The primary interface (`src/starter.cc`) is the only
-export surface — partitions cannot be imported from outside the module.
-
 ```text
-src/        the starter module: primary interface + dialect partitions
-            (:core, :enums, :http — the HTTP/1.1 parser/writer)
-tests/      dialect tests (module-native minimal harness, no macro frameworks)
-foreign/    quarantined external-interface adaptation (headers allowed);
-            holds the :exec partition and the combinator half of the
-            stdexec swap boundary (exec.backend.cc)
-unsafe/     quarantined machine primitives; holds the :net partition and
-            the I/O half of the swap boundary (net.backend.cc — the kqueue
-            io-context)
-examples/   dialect example executables (httpd: thread-per-core
-            share-nothing HTTP server over :net + :http)
+src/        the starter module and pure dialect partitions
+tests/      module-native tests and the HTTP integration smoke test
+foreign/    pinned external-library adaptation; the stdexec boundary
+unsafe/     Darwin syscall adaptation; the owner-driven kqueue reactor
+examples/   the blocking bounded HTTP server
+upstream/   GCC/libstdc++ reproductions and submission material
 ```
 
-## Async
+One named module, `starter`, is the public surface. Its partitions are
+internal and explicitly listed in CMake. Dialect code contains no headers or
+preprocessor directives.
 
-Sender/receiver (`std::execution`, P2300) is the only async algebra, active
-today via the reference implementation (NVIDIA stdexec) pinned by SHA at
-configure time — consumed from the maintained fork
-(github.com/bjornpagen/stdexec), whose every commit is an
-individually-submitted upstream fix (currently NVIDIA/stdexec#2167 and
-NVIDIA/stdexec#2168) — and quarantined behind exactly one swap boundary
-spelled across two plain TUs: `foreign/exec.backend.cc` (combinator half)
-re-exports the verified combinator subset as `namespace ex` plus an
-expected-erroring `wait` (never `sync_wait`: the dialect's errors are
-values, not termination), and `unsafe/net.backend.cc` (I/O half) composes
-the kqueue io-context's readiness senders. The `starter:exec` and
-`starter:net` partitions export the dialect-clean surfaces over a narrow
-ABI (GCC 16.1 ICEs on stdexec headers in any module unit, so senders never
-cross the module boundary). No other file may touch stdexec; when libstdc++
-ships `__cpp_lib_senders`, the vendor is deleted and only that boundary is
-rewritten (AGENTS.md §15).
+## Sender/receiver
 
-## Checks
+`std::execution` is the application async algebra. Until the pinned libstdc++
+ships it, the reference implementation is pinned immutably and quarantined in
+exactly one plain translation unit: `foreign/exec.backend.cc`.
 
-Enforcement lives in the compiler and the build, not in scripts:
+The kernel reactor deliberately does not use generic readiness senders. A
+syscall boundary reports event values; the owning loop advances a closed state
+variant. This keeps kernel lifetime safety independent of sender operation
+state. On every toolchain bump, the `PINS.md` ritual checks for native senders;
+when they arrive, the one vendor boundary is rewritten over `std::execution`.
 
-- **the compiler** — exceptions off, RTTI off, reflection on are hard
-  configure-time flags; a toolchain outside the pin never configures
-- **the build graph** — `cmake --build --preset dev` (any warning is an error)
-- **clang-tidy** — `cmake --build --preset lint` runs it over the
-  Clang-readable graph during the build
-- **ctest** — `ctest --preset dev` runs the unit tests, the httpd smoke,
-  plus the toolchain-conformance tests
+## Verification
+
+- every GCC build treats warnings as errors,
+- `lint` compiles and analyzes the actual `unsafe/` and `foreign/` plain TUs,
+- `asan-ubsan` runs the full unit and HTTP smoke suite,
+- parser and writer tests pin ownership, bounds, and failure transparency,
+- the HTTP smoke test exercises concurrent clients, malformed input, typed
+  handler failure, absolute-deadline expiry, and signal-driven shutdown.
 
 ## Known macOS toolchain issues
 
-Documented, not automated — fixing your toolchain is your business:
-
-- **GCC's `import std` silently breaks against the macOS SDK.** The SDK's
-  `sys/_types/_rsize_t.h` assumes `__has_feature(modules)` implies clang and
-  uses a clang-only `stddef.h` protocol, so the libstdc++ `std` module fails
-  to compile — and libstdc++ **installs an empty `bits/std.cc` as a
-  fallback**. Fix: drop a plain-typedef copy of `_rsize_t.h` into GCC's
-  `include-fixed/sys/_types/` and rebuild libstdc++. Verify
-  `include/c++/<ver>/bits/std.cc` is ~113 KB, not 1 byte. (Both halves are
-  ready to submit upstream; see `upstream/`.)
-- **MacPorts' `/opt/local/bin` clang wrappers break `clang-scan-deps`**
-  (toolchain-root inference). Point a user preset at the real binaries in
-  `/opt/local/libexec/llvm-22/bin` and set `CMAKE_CXX_STDLIB_MODULES_JSON`
-  to `.../llvm-22/lib/libc++/libc++.modules.json`.
+The pinned GCC `import std` path needs two upstream fixes represented under
+`upstream/`: Darwin's `_rsize_t` fixincludes interaction and libstdc++'s
+silent empty `std` module fallback. `PINS.md` is the registry for active local
+workarounds; upstream submission material records the external fixes.

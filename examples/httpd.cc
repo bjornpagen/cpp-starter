@@ -3,40 +3,48 @@ import starter;
 
 namespace {
 
-constexpr auto text_plain = std::array{starter::HeaderView{.name = "Content-Type", .value = "text/plain"}};
+enum class HandlerError : std::uint8_t {
+	ResponseTooLarge,
+};
 
-struct WorkerHandler {
+struct Handler {
 	static constexpr std::size_t max_body_bytes = 256;
 
-	[[nodiscard]] auto operator()(std::uint32_t worker, std::string_view request, std::span<char> out) const -> std::size_t {
-		auto const parsed = starter::parse_request(request);
-		if (!parsed) {
-			return starter::write_response(starter::ResponseHead{.status = 400, .reason = "Bad Request"}, text_plain, "bad request\n", out)
-			    .value_or(0);
+	[[nodiscard]] auto operator()(starter::Request const& request) const -> std::expected<starter::Response, HandlerError> {
+		if (request.target.size() > max_body_bytes - std::string_view{"path \n"}.size()) {
+			return std::unexpected(HandlerError::ResponseTooLarge);
 		}
-		auto body_buffer = std::array<char, max_body_bytes>{};
-		auto const body_span = std::span{body_buffer};
-		auto const formatted = std::format_to_n(body_span.begin(), std::ssize(body_span), "worker {} path {}\n", worker, parsed->target);
-		auto const body = std::string_view{body_span.begin(), formatted.out};
-		return starter::write_response(starter::ResponseHead{.status = 200, .reason = "OK"}, text_plain, body, out).value_or(0);
+		return starter::Response{
+		    .status = 200,
+		    .reason = "OK",
+		    .headers = {starter::Header{.name = "Content-Type", .value = "text/plain"}},
+		    .body = std::format("path {}\n", request.target),
+		};
 	}
 };
 
 }
 
 auto main() -> int {
-	auto const workers = std::min(starter::hardware_workers(), std::uint32_t{4});
-	auto server = starter::serve_http(starter::HttpServerConfig{.port = 0, .workers = workers}, WorkerHandler{});
+	auto server = starter::open_http(starter::HttpServerConfig{
+	    .port = 0,
+	    .max_connections = starter::max_connection_count,
+	    .request_timeout = std::chrono::seconds{2},
+	    .response_timeout = std::chrono::seconds{2},
+	});
 	if (!server) {
-		std::println("httpd: start failed: stage {} errno {}", std::to_underlying(server.error().stage), server.error().code);
+		std::println("httpd: open failed: stage {} errno {}", std::to_underlying(server.error().stage), server.error().code);
 		return 1;
 	}
 
 	std::println("listening {}", server->port());
 	starter::flush_output();
 
-	starter::wait_for_interrupt();
-	server->stop();
+	auto const ran = server->run<Handler>();
+	if (!ran) {
+		std::println("httpd: run failed: stage {} errno {}", std::to_underlying(ran.error().stage), ran.error().code);
+		return 1;
+	}
 	std::println("stopped");
 	return 0;
 }

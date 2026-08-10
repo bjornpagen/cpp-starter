@@ -1,18 +1,20 @@
-# Expected-failure harness: each EXCLUDE_FROM_ALL case must fail to build
-# with its pinned diagnostic — a case that starts compiling, or whose
-# diagnostic degrades, fails the suite.
-function(starter_compile_fail_case case diagnostic)
-	add_executable(cf_${case} EXCLUDE_FROM_ALL ${case}.cc)
-	target_link_libraries(cf_${case} PRIVATE starter_module starter_language_profile)
-	add_test(NAME compile_fail.${case}
-		COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target cf_${case}
-	)
-	set_tests_properties(compile_fail.${case} PROPERTIES
-		PASS_REGULAR_EXPRESSION "${diagnostic}"
-		RUN_SERIAL TRUE
-	)
-endfunction()
+# Expected-failure case: starting to compile, or losing its pinned diagnostic,
+# fails the suite.
+add_executable(cf_discarded_expected EXCLUDE_FROM_ALL
+	discarded_expected.cc
+)
 
-starter_compile_fail_case(discarded_expected
-	"ignoring return value of .*greeting.*nodiscard"
+target_link_libraries(cf_discarded_expected
+	PRIVATE
+		starter_module
+		starter_language_profile
+)
+
+add_test(NAME compile_fail.discarded_expected
+	COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target cf_discarded_expected
+)
+
+set_tests_properties(compile_fail.discarded_expected PROPERTIES
+	PASS_REGULAR_EXPRESSION "ignoring return value of .*greeting.*nodiscard"
+	RUN_SERIAL TRUE
 )

@@ -1,19 +1,20 @@
-/* PIN(gcc-gmf-stdexec-ice): plain TU — with foreign/exec.backend.cc, the repository's entire stdexec spelling surface; see PINS.md */
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
-#include <ctime>
 #include <exception>
-#include <latch>
+#include <expected>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string_view>
-#include <thread>
+#include <tuple>
 #include <utility>
+#include <variant>
 
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -21,31 +22,533 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <exec/static_thread_pool.hpp>
-#include <stdexec/execution.hpp>
+namespace starter::net_backend {
 
-namespace ex {
+struct Server;
 
-using stdexec::just;
-using stdexec::let_value;
-using stdexec::starts_on;
-using stdexec::then;
+struct ServerDeleter {
+	auto operator()(Server* server) const noexcept -> void;
+};
 
-using exec::static_thread_pool;
+using ServerOwner = std::unique_ptr<Server, ServerDeleter>;
+using WireError = std::array<std::int32_t, 2>;
+using RawHandler = std::optional<std::size_t> (*)(std::string_view request, std::span<char> out) noexcept;
+
+namespace {
+
+inline constexpr std::size_t buffer_bytes = 8192;
+inline constexpr std::size_t max_connections = 128;
+inline constexpr std::int64_t max_timeout_milliseconds = 86'400'000;
+inline constexpr int listen_backlog = 256;
+
+inline constexpr std::int32_t stage_configuration = 1;
+inline constexpr std::int32_t stage_socket = 2;
+inline constexpr std::int32_t stage_option = 3;
+inline constexpr std::int32_t stage_bind = 4;
+inline constexpr std::int32_t stage_listen = 5;
+inline constexpr std::int32_t stage_nonblock = 6;
+inline constexpr std::int32_t stage_queue = 7;
+inline constexpr std::int32_t stage_signal = 8;
+inline constexpr std::int32_t stage_resolve = 9;
+inline constexpr std::int32_t stage_accept = 10;
+
+inline constexpr std::uint64_t listener_token = 1;
+inline constexpr std::uint64_t interrupt_token = 2;
+inline constexpr std::uint64_t terminate_token = 3;
+inline constexpr std::uint64_t slot_bits = 8;
+inline constexpr std::uint64_t slot_mask = (std::uint64_t{1} << slot_bits) - 1;
+inline constexpr std::uint64_t max_generation = std::numeric_limits<std::uint64_t>::max() >> slot_bits;
+
+static_assert(max_connections <= (std::uint64_t{1} << slot_bits));
+
+using Clock = std::chrono::steady_clock;
+using Deadline = Clock::time_point;
+
+[[nodiscard]] constexpr auto wire_error(std::int32_t stage, std::int32_t code) -> WireError {
+	return {stage, code};
+}
+
+/* PIN(clang-contracts): keep the Clang-readable boundary fail-stop until Clang parses C++26 contracts */
+auto invariant(bool condition) noexcept -> void {
+	if (!condition) {
+		std::terminate();
+	}
+}
+
+class Fd {
+public:
+	Fd() = default;
+
+	explicit Fd(int value) noexcept : value_{value} {}
+
+	Fd(Fd&& other) noexcept : value_{std::exchange(other.value_, -1)} {}
+
+	auto operator=(Fd&& other) noexcept -> Fd& {
+		if (this != &other) {
+			reset();
+			value_ = std::exchange(other.value_, -1);
+		}
+		return *this;
+	}
+
+	Fd(Fd const&) = delete;
+	auto operator=(Fd const&) -> Fd& = delete;
+
+	~Fd() {
+		reset();
+	}
+
+	[[nodiscard]] auto get() const noexcept -> int {
+		return value_;
+	}
+
+	[[nodiscard]] auto valid() const noexcept -> bool {
+		return value_ >= 0;
+	}
+
+private:
+	auto reset() noexcept -> void {
+		if (value_ >= 0) {
+			std::ignore = ::close(std::exchange(value_, -1));
+		}
+	}
+
+	int value_ = -1;
+};
+
+struct Reading {
+	std::size_t received;
+	Deadline deadline;
+};
+
+struct Writing {
+	std::size_t size;
+	std::size_t sent;
+	Deadline deadline;
+};
+
+using SlotState = std::variant<std::monostate, Reading, Writing>;
+
+struct Slot {
+	std::uint64_t generation = 1;
+	Fd descriptor{};
+	std::array<char, buffer_bytes> input{};
+	std::array<char, buffer_bytes> output{};
+	SlotState state{};
+};
+
+[[nodiscard]] auto make_event(std::uint64_t ident, std::int16_t filter, std::uint16_t flags, std::uint32_t fflags,
+                              std::uint64_t token) noexcept -> ::kevent64_s {
+	auto event = ::kevent64_s{};
+	event.ident = ident;
+	event.filter = filter;
+	event.flags = flags;
+	event.fflags = fflags;
+	event.data = 0;
+	event.udata = token;
+	event.ext[0] = 0;
+	event.ext[1] = 0;
+	return event;
+}
+
+[[nodiscard]] auto submit(int queue, ::kevent64_s const& event) noexcept -> std::int32_t {
+	return ::kevent64(queue, &event, 1, nullptr, 0, 0, nullptr) < 0 ? errno : 0;
+}
+
+[[nodiscard]] auto set_nonblocking(int fd) noexcept -> std::int32_t {
+	auto const flags = ::fcntl(fd, F_GETFL, 0);
+	if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+		return errno;
+	}
+	return 0;
+}
+
+[[nodiscard]] auto configure_connection(int fd) noexcept -> std::int32_t {
+	if (auto const code = set_nonblocking(fd); code != 0) {
+		return code;
+	}
+	auto const one = 1;
+	if (::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one) < 0) {
+		return errno;
+	}
+	return 0;
+}
+
+[[nodiscard]] auto make_listener(std::uint16_t port) noexcept -> std::expected<Fd, WireError> {
+	auto descriptor = Fd{::socket(AF_INET, SOCK_STREAM, 0)};
+	if (!descriptor.valid()) {
+		return std::unexpected(wire_error(stage_socket, errno));
+	}
+
+	auto const one = 1;
+	if (::setsockopt(descriptor.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) < 0) {
+		return std::unexpected(wire_error(stage_option, errno));
+	}
+
+	auto address = ::sockaddr_in{};
+	address.sin_family = AF_INET;
+	address.sin_port = htons(port);
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	/* SAFETY: sockaddr_in -> sockaddr is the bind(2) ABI's aliasing rule */
+	if (::bind(descriptor.get(), reinterpret_cast<::sockaddr const*>(&address), sizeof address) < 0) {
+		return std::unexpected(wire_error(stage_bind, errno));
+	}
+	if (auto const code = set_nonblocking(descriptor.get()); code != 0) {
+		return std::unexpected(wire_error(stage_nonblock, code));
+	}
+	if (::listen(descriptor.get(), listen_backlog) < 0) {
+		return std::unexpected(wire_error(stage_listen, errno));
+	}
+	return descriptor;
+}
+
+[[nodiscard]] auto bound_port(int fd) noexcept -> std::expected<std::uint16_t, WireError> {
+	auto address = ::sockaddr_in{};
+	auto length = ::socklen_t{sizeof address};
+	/* SAFETY: sockaddr_in -> sockaddr is the getsockname(2) ABI's aliasing rule */
+	if (::getsockname(fd, reinterpret_cast<::sockaddr*>(&address), &length) < 0) {
+		return std::unexpected(wire_error(stage_resolve, errno));
+	}
+	return ntohs(address.sin_port);
+}
+
+[[nodiscard]] constexpr auto connection_token(std::size_t index, std::uint64_t generation) -> std::uint64_t {
+	return (generation << slot_bits) | static_cast<std::uint64_t>(index);
+}
+
+[[nodiscard]] constexpr auto token_index(std::uint64_t token) -> std::size_t {
+	return static_cast<std::size_t>(token & slot_mask);
+}
+
+[[nodiscard]] constexpr auto token_generation(std::uint64_t token) -> std::uint64_t {
+	return token >> slot_bits;
+}
+
+[[nodiscard]] auto deadline_after(std::chrono::milliseconds timeout) -> Deadline {
+	auto const now = Clock::now();
+	auto const delta = std::chrono::duration_cast<Clock::duration>(timeout);
+	if (now > Deadline::max() - delta) {
+		return Deadline::max();
+	}
+	return now + delta;
+}
+
+[[nodiscard]] auto timeout_until(std::optional<Deadline> deadline) -> std::optional<::timespec> {
+	if (!deadline) {
+		return std::nullopt;
+	}
+	auto const now = Clock::now();
+	auto const remaining = *deadline <= now ? Clock::duration::zero() : *deadline - now;
+	auto const seconds = std::chrono::duration_cast<std::chrono::seconds>(remaining);
+	auto const nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining - seconds);
+	return ::timespec{.tv_sec = static_cast<::time_t>(seconds.count()), .tv_nsec = static_cast<long>(nanoseconds.count())};
+}
+
+using SignalHandler = decltype(SIG_DFL);
+
+class SignalGuard {
+public:
+	[[nodiscard]] static auto make() noexcept -> std::expected<SignalGuard, std::int32_t> {
+		/* SAFETY: Darwin EVFILT_SIGNAL records delivery attempts even when SIG_IGN prevents default action */
+		auto const old_interrupt = std::signal(SIGINT, SIG_IGN);
+		if (old_interrupt == SIG_ERR) {
+			return std::unexpected(errno == 0 ? EINVAL : errno);
+		}
+		auto const old_terminate = std::signal(SIGTERM, SIG_IGN);
+		if (old_terminate == SIG_ERR) {
+			auto const code = errno == 0 ? EINVAL : errno;
+			std::ignore = std::signal(SIGINT, old_interrupt);
+			return std::unexpected(code);
+		}
+		return SignalGuard{old_interrupt, old_terminate};
+	}
+
+	SignalGuard(SignalGuard&& other) noexcept
+	    : old_interrupt_{other.old_interrupt_}, old_terminate_{other.old_terminate_}, active_{std::exchange(other.active_, false)} {}
+
+	auto operator=(SignalGuard&&) -> SignalGuard& = delete;
+	SignalGuard(SignalGuard const&) = delete;
+	auto operator=(SignalGuard const&) -> SignalGuard& = delete;
+
+	~SignalGuard() {
+		if (active_) {
+			std::ignore = std::signal(SIGINT, old_interrupt_);
+			std::ignore = std::signal(SIGTERM, old_terminate_);
+		}
+	}
+
+private:
+	SignalGuard(SignalHandler old_interrupt, SignalHandler old_terminate) noexcept
+	    : old_interrupt_{old_interrupt}, old_terminate_{old_terminate} {}
+
+	SignalHandler old_interrupt_;
+	SignalHandler old_terminate_;
+	bool active_ = true;
+};
 
 }
 
-namespace starter::net_backend {
+struct Server {
+	explicit Server(std::size_t connection_count) : slot_count{connection_count} {}
 
-using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity);
+	Fd queue{};
+	Fd listener{};
+	std::uint16_t port = 0;
+	std::size_t slot_count;
+	std::array<Slot, max_connections> slots{};
+	bool listener_armed = false;
+	bool ran = false;
+	std::chrono::milliseconds request_timeout{0};
+	std::chrono::milliseconds response_timeout{0};
+};
+
+namespace {
+
+[[nodiscard]] auto find_vacant(Server const& server) -> std::optional<std::size_t> {
+	for (auto index = std::size_t{0}; index < server.slot_count; ++index) {
+		if (std::holds_alternative<std::monostate>(server.slots[index].state)) {
+			return index;
+		}
+	}
+	return std::nullopt;
+}
+
+auto release_slot(Slot& slot) -> void {
+	invariant(slot.generation < max_generation);
+	++slot.generation;
+	slot.descriptor = Fd{};
+	std::ignore = slot.state.emplace<std::monostate>();
+}
+
+[[nodiscard]] auto arm_listener(Server& server) noexcept -> std::expected<void, WireError> {
+	if (server.listener_armed || !find_vacant(server)) {
+		return {};
+	}
+	auto const event = make_event(static_cast<std::uint64_t>(server.listener.get()), EVFILT_READ, EV_ADD | EV_ONESHOT, 0, listener_token);
+	if (auto const code = submit(server.queue.get(), event); code != 0) {
+		return std::unexpected(wire_error(stage_queue, code));
+	}
+	server.listener_armed = true;
+	return {};
+}
+
+[[nodiscard]] auto arm_connection(Server& server, std::size_t index, std::int16_t filter) noexcept -> std::expected<void, WireError> {
+	auto& slot = server.slots[index];
+	invariant(slot.descriptor.valid());
+	auto const event = make_event(static_cast<std::uint64_t>(slot.descriptor.get()), filter, EV_ADD | EV_ONESHOT, 0,
+	                              connection_token(index, slot.generation));
+	if (auto const code = submit(server.queue.get(), event); code != 0) {
+		return std::unexpected(wire_error(stage_queue, code));
+	}
+	return {};
+}
+
+[[nodiscard]] auto advance_write(Server& server, std::size_t index) noexcept -> std::expected<void, WireError> {
+	auto& slot = server.slots[index];
+	auto* writing = std::get_if<Writing>(&slot.state);
+	invariant(writing != nullptr);
+
+	for (;;) {
+		if (Clock::now() >= writing->deadline) {
+			release_slot(slot);
+			return {};
+		}
+		if (writing->sent == writing->size) {
+			release_slot(slot);
+			return {};
+		}
+		auto const count = ::write(slot.descriptor.get(), slot.output.data() + writing->sent, writing->size - writing->sent);
+		if (count > 0) {
+			writing->sent += static_cast<std::size_t>(count);
+			continue;
+		}
+		if (count == 0) {
+			release_slot(slot);
+			return {};
+		}
+		if (errno == EINTR) {
+			continue;
+		}
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			return arm_connection(server, index, EVFILT_WRITE);
+		}
+		release_slot(slot);
+		return {};
+	}
+}
+
+[[nodiscard]] auto advance_read(Server& server, std::size_t index, RawHandler handler) noexcept -> std::expected<void, WireError> {
+	auto& slot = server.slots[index];
+	auto* reading = std::get_if<Reading>(&slot.state);
+	invariant(reading != nullptr);
+
+	for (;;) {
+		if (Clock::now() >= reading->deadline) {
+			release_slot(slot);
+			return {};
+		}
+		if (reading->received == slot.input.size()) {
+			break;
+		}
+		auto const count = ::read(slot.descriptor.get(), slot.input.data() + reading->received, slot.input.size() - reading->received);
+		if (count > 0) {
+			reading->received += static_cast<std::size_t>(count);
+			auto const input = std::string_view{slot.input.data(), reading->received};
+			if (input.contains("\r\n\r\n")) {
+				break;
+			}
+			continue;
+		}
+		if (count == 0) {
+			break;
+		}
+		if (errno == EINTR) {
+			continue;
+		}
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			return arm_connection(server, index, EVFILT_READ);
+		}
+		release_slot(slot);
+		return {};
+	}
+
+	if (reading->received == 0) {
+		release_slot(slot);
+		return {};
+	}
+	auto const response = handler(std::string_view{slot.input.data(), reading->received}, std::span<char>{slot.output});
+	if (!response || *response > slot.output.size()) {
+		release_slot(slot);
+		return {};
+	}
+	std::ignore = slot.state.emplace<Writing>(Writing{.size = *response, .sent = 0, .deadline = deadline_after(server.response_timeout)});
+	return advance_write(server, index);
+}
+
+[[nodiscard]] auto accept_ready(Server& server, RawHandler handler) noexcept -> std::expected<void, WireError> {
+	server.listener_armed = false;
+	for (;;) {
+		auto const vacant = find_vacant(server);
+		if (!vacant) {
+			return {};
+		}
+		auto descriptor = Fd{::accept(server.listener.get(), nullptr, nullptr)};
+		if (!descriptor.valid()) {
+			if (errno == EINTR || errno == ECONNABORTED) {
+				continue;
+			}
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				return {};
+			}
+			return std::unexpected(wire_error(stage_accept, errno));
+		}
+		if (configure_connection(descriptor.get()) != 0) {
+			continue;
+		}
+		auto& slot = server.slots[*vacant];
+		slot.input.fill('\0');
+		slot.output.fill('\0');
+		slot.descriptor = std::move(descriptor);
+		std::ignore = slot.state.emplace<Reading>(Reading{.received = 0, .deadline = deadline_after(server.request_timeout)});
+		if (auto advanced = advance_read(server, *vacant, handler); !advanced) {
+			return advanced;
+		}
+	}
+}
+
+[[nodiscard]] auto nearest_deadline(Server const& server) -> std::optional<Deadline> {
+	auto nearest = std::optional<Deadline>{};
+	for (auto const& slot : std::span{server.slots}.first(server.slot_count)) {
+		auto deadline = std::optional<Deadline>{};
+		if (auto const* reading = std::get_if<Reading>(&slot.state)) {
+			deadline = reading->deadline;
+		} else if (auto const* writing = std::get_if<Writing>(&slot.state)) {
+			deadline = writing->deadline;
+		}
+		if (deadline && (!nearest || *deadline < *nearest)) {
+			nearest = deadline;
+		}
+	}
+	return nearest;
+}
+
+auto expire_slots(Server& server, Deadline now) -> void {
+	for (auto& slot : std::span{server.slots}.first(server.slot_count)) {
+		if (auto const* reading = std::get_if<Reading>(&slot.state); reading != nullptr && reading->deadline <= now) {
+			release_slot(slot);
+			continue;
+		}
+		if (auto const* writing = std::get_if<Writing>(&slot.state); writing != nullptr && writing->deadline <= now) {
+			release_slot(slot);
+		}
+	}
+}
+
+[[nodiscard]] auto register_signals(Server& server) noexcept -> std::expected<void, WireError> {
+	auto const interrupt = make_event(SIGINT, EVFILT_SIGNAL, EV_ADD | EV_CLEAR, 0, interrupt_token);
+	if (auto const code = submit(server.queue.get(), interrupt); code != 0) {
+		return std::unexpected(wire_error(stage_signal, code));
+	}
+	auto const terminate = make_event(SIGTERM, EVFILT_SIGNAL, EV_ADD | EV_CLEAR, 0, terminate_token);
+	if (auto const code = submit(server.queue.get(), terminate); code != 0) {
+		return std::unexpected(wire_error(stage_signal, code));
+	}
+	return {};
+}
+
+[[nodiscard]] auto dispatch(Server& server, std::span<::kevent64_s const> events, RawHandler handler) noexcept
+    -> std::expected<bool, WireError> {
+	if (std::ranges::any_of(events, [](auto const& event) {
+		    return event.udata == interrupt_token || event.udata == terminate_token;
+	    })) {
+		return true;
+	}
+
+	for (auto const& event : events) {
+		if (event.udata == listener_token) {
+			if ((event.flags & EV_ERROR) != 0) {
+				return std::unexpected(wire_error(stage_queue, static_cast<std::int32_t>(event.data)));
+			}
+			if (auto accepted = accept_ready(server, handler); !accepted) {
+				return std::unexpected(accepted.error());
+			}
+			continue;
+		}
+
+		auto const index = token_index(event.udata);
+		auto const generation = token_generation(event.udata);
+		if (index >= server.slot_count) {
+			continue;
+		}
+		auto& slot = server.slots[index];
+		if (generation == 0 || generation != slot.generation) {
+			continue;
+		}
+		if ((event.flags & EV_ERROR) != 0) {
+			release_slot(slot);
+			continue;
+		}
+		if (event.filter == EVFILT_READ && std::holds_alternative<Reading>(slot.state)) {
+			if (auto advanced = advance_read(server, index, handler); !advanced) {
+				return std::unexpected(advanced.error());
+			}
+		} else if (event.filter == EVFILT_WRITE && std::holds_alternative<Writing>(slot.state)) {
+			if (auto advanced = advance_write(server, index); !advanced) {
+				return std::unexpected(advanced.error());
+			}
+		}
+	}
+	return false;
+}
+
+}
 
 [[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool {
+	if (code == EAGAIN) {
+		return true;
+	}
 	switch (code) {
 	case EINTR:
-	case EAGAIN:
-#if EWOULDBLOCK != EAGAIN
-	case EWOULDBLOCK:
-#endif
 	case ECONNRESET:
 	case ECONNABORTED:
 	case EPIPE:
@@ -55,819 +558,107 @@ using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::
 	case ENFILE:
 	case ENOBUFS:
 	case ENOMEM:
+	case EADDRINUSE:
 		return true;
 	default:
 		return false;
 	}
 }
 
-namespace {
-
-inline constexpr std::uint32_t max_workers = 4;
-inline constexpr std::size_t buffer_bytes = 8192;
-inline constexpr int listen_backlog = 256;
-inline constexpr std::uintptr_t stop_ident = 1;
-
-/**
- * Mirrored by starter::NetStage in unsafe/net.cc (narrow scalar ABI;
- * keep in sync).
- */
-inline constexpr std::int32_t stage_socket = 1;
-inline constexpr std::int32_t stage_option = 2;
-inline constexpr std::int32_t stage_bind = 3;
-inline constexpr std::int32_t stage_listen = 4;
-inline constexpr std::int32_t stage_nonblock = 5;
-inline constexpr std::int32_t stage_queue = 6;
-inline constexpr std::int32_t stage_resolve = 7;
-inline constexpr std::int32_t stage_accept = 8;
-inline constexpr std::int32_t stage_read = 9;
-inline constexpr std::int32_t stage_write = 10;
-
-struct NetErr {
-	std::int32_t stage;
-	std::int32_t code;
-};
-
-/**
- * EV_SET spelled as a function: the macro's implicit int conversions
- * trip -Wconversion at the expansion site.
- */
-[[nodiscard]] auto make_event(std::uintptr_t ident, std::int16_t filter, std::uint16_t flags, std::uint32_t fflags, void* udata) noexcept
-    -> struct ::kevent {
-	struct ::kevent ev{};
-	ev.ident = ident;
-	ev.filter = filter;
-	ev.flags = flags;
-	ev.fflags = fflags;
-	ev.data = 0;
-	ev.udata = udata;
-	return ev;
-
-}
-
-[[nodiscard]] auto
-set_nonblocking(int fd) noexcept -> std::int32_t {
-	auto const flags = ::fcntl(fd, F_GETFL, 0);
-	if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-		return errno;
-	}
-	return 0;
-}
-
-/* SAFETY: self is the operation state, address-stable from connect until completion; the reactor invokes fn at most once, on the worker's own thread */
-struct Waiter {
-	void (*fn)(void* self, bool canceled);
-	void* self;
-};
-
-/**
- * One worker's kqueue reactor, single-threaded by construction: only
- * request_stop crosses threads. A worker's straight-line connection
- * chain suspends on at most one fd at a time, so a single armed-waiter
- * slot is the whole scheduler state.
- */
-class Ctx {
-public:
-	Ctx() = default;
-	Ctx(Ctx const&) = delete;
-	auto operator=(Ctx const&) -> Ctx& = delete;
-	Ctx(Ctx&&) = delete;
-	auto operator=(Ctx&&) -> Ctx& = delete;
-
-	~Ctx() {
-		if (kq_ >= 0) {
-			::close(kq_);
-		}
-	}
-
-	[[nodiscard]] auto init() noexcept -> std::int32_t {
-		kq_ = ::kqueue();
-		if (kq_ < 0) {
-			return errno;
-		}
-		auto ev = make_event(stop_ident, EVFILT_USER, EV_ADD | EV_CLEAR, 0, nullptr);
-		if (::kevent(kq_, &ev, 1, nullptr, 0, nullptr) < 0) {
-			return errno;
-		}
-		return 0;
-	}
-
-	/**
-	 * Parks `waiter` until `fd` is ready for `filter`. Oneshot: the
-	 * kernel deletes the event on delivery, so normal operation leaves
-	 * no stale registrations behind.
-	 */
-	[[nodiscard]] auto arm(int fd, std::int16_t filter, Waiter* waiter) noexcept -> std::int32_t {
-		auto ev = make_event(static_cast<std::uintptr_t>(fd), filter, EV_ADD | EV_ONESHOT, 0, waiter);
-		if (::kevent(kq_, &ev, 1, nullptr, 0, nullptr) < 0) {
-			return errno;
-		}
-		armed_ = waiter;
-		return 0;
-	}
-
-	/** The stop event only flips `stopping`; run_worker owns the consequences. */
-	auto run_one() noexcept -> void {
-		dispatch(nullptr);
-	}
-
-	/**
-	 * Non-blocking dispatch: a worker whose chains keep completing
-	 * synchronously still observes a pending stop.
-	 */
-	auto poll() noexcept -> void {
-		auto const zero = ::timespec{.tv_sec = 0, .tv_nsec = 0};
-		dispatch(&zero);
-	}
-
-	/**
-	 * Completes the suspended operation through its stopped channel:
-	 * destroying a started-but-uncompleted operation state is undefined
-	 * in sender-land.
-	 */
-	auto cancel_armed() noexcept -> void {
-		if (armed_ == nullptr) {
-			return;
-		}
-		auto* waiter = std::exchange(armed_, nullptr);
-		waiter->fn(waiter->self, true);
-	}
-
-	[[nodiscard]] auto has_armed() const noexcept -> bool {
-		return armed_ != nullptr;
-	}
-
-	/* SAFETY: the one cross-thread entry — kevent(2) on a shared kqueue fd is thread-safe; NOTE_TRIGGER wakes the owning worker, which stops on its own thread */
-	auto request_stop() noexcept -> void {
-		auto ev = make_event(stop_ident, EVFILT_USER, 0, NOTE_TRIGGER, nullptr);
-		static_cast<void>(::kevent(kq_, &ev, 1, nullptr, 0, nullptr));
-	}
-
-	bool stopping = false;
-
-private:
-	auto dispatch(::timespec const* timeout) noexcept -> void {
-		auto events = std::array<struct ::kevent, 4>{};
-		auto const count = ::kevent(kq_, nullptr, 0, events.data(), static_cast<int>(events.size()), timeout);
-		if (count < 0) {
-			if (errno != EINTR) {
-				stopping = true;
-			}
-			return;
-		}
-		for (auto const& ev : std::span{events}.first(static_cast<std::size_t>(count))) {
-			if (ev.filter == EVFILT_USER) {
-				stopping = true;
-				continue;
-			}
-			auto* waiter = static_cast<Waiter*>(ev.udata);
-			if (waiter == nullptr || waiter != armed_) {
-				continue;
-			}
-			armed_ = nullptr;
-			waiter->fn(waiter->self, false);
-		}
-	}
-
-	int kq_ = -1;
-	Waiter* armed_ = nullptr;
-};
-
-/**
- * An accepted connection: lives in let_value's operation state and is
- * closed by RAII when that state is destroyed.
- */
-class Conn {
-public:
-	Conn() = default;
-
-	explicit Conn(int fd) noexcept : fd_{fd} {}
-
-	Conn(Conn&& other) noexcept : in{other.in}, out{other.out}, fd_{std::exchange(other.fd_, -1)} {}
-
-	auto operator=(Conn&& other) noexcept -> Conn& {
-		if (this != &other) {
-			close_fd();
-			in = other.in;
-			out = other.out;
-			fd_ = std::exchange(other.fd_, -1);
-		}
-		return *this;
-	}
-
-	Conn(Conn const&) = delete;
-	auto operator=(Conn const&) -> Conn& = delete;
-
-	~Conn() {
-		close_fd();
-	}
-
-	[[nodiscard]] auto fd() const noexcept -> int {
-		return fd_;
-	}
-
-	std::array<char, buffer_bytes> in{};
-	std::array<char, buffer_bytes> out{};
-
-private:
-	auto close_fd() noexcept -> void {
-		if (fd_ >= 0) {
-			::close(std::exchange(fd_, -1));
-		}
-	}
-
-	int fd_ = -1;
-};
-
-template<class Rcvr>
-struct AcceptOp {
-	Rcvr rcvr;
-	Ctx* ctx;
-	int lfd;
-	Waiter waiter{};
-
-	auto start() & noexcept -> void {
-		attempt();
-	}
-
-	auto attempt() noexcept -> void {
-		for (;;) {
-			auto const fd = ::accept(lfd, nullptr, nullptr);
-			if (fd >= 0) {
-				if (auto const rc = set_nonblocking(fd); rc != 0) {
-					::close(fd);
-					stdexec::set_error(std::move(rcvr), NetErr{stage_nonblock, rc});
-					return;
-				}
-				auto const one = 1;
-				static_cast<void>(::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one));
-				stdexec::set_value(std::move(rcvr), Conn{fd});
-				return;
-			}
-			if (errno == EINTR || errno == ECONNABORTED) {
-				continue;
-			}
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				waiter = Waiter{&AcceptOp::ready, this};
-				if (auto const rc = ctx->arm(lfd, EVFILT_READ, &waiter); rc != 0) {
-					stdexec::set_error(std::move(rcvr), NetErr{stage_queue, rc});
-				}
-				return;
-			}
-			stdexec::set_error(std::move(rcvr), NetErr{stage_accept, errno});
-			return;
-		}
-	}
-
-	static auto ready(void* self, bool canceled) noexcept -> void {
-		auto& op = *static_cast<AcceptOp*>(self);
-		if (canceled) {
-			stdexec::set_stopped(std::move(op.rcvr));
-			return;
-		}
-		op.attempt();
-	}
-};
-
-struct AcceptSender {
-	using sender_concept = stdexec::sender_t;
-	using completion_signatures =
-	    stdexec::completion_signatures<stdexec::set_value_t(Conn), stdexec::set_error_t(NetErr), stdexec::set_stopped_t()>;
-
-	Ctx* ctx;
-	int lfd;
-
-	template<class Rcvr>
-	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> AcceptOp<Rcvr> {
-		return {std::move(rcvr), ctx, lfd};
-	}
-};
-
-[[nodiscard]] auto async_accept(Ctx& ctx, int listener_fd) noexcept -> AcceptSender {
-	return {&ctx, listener_fd};
-}
-
-/**
- * Some: complete after the first successful read. HttpHead: read until
- * the request head terminator (CRLF CRLF), a full buffer, or peer
- * half-close. Either way the completion value is the total byte count;
- * 0 is EOF before any data.
- */
-enum class ReadUntil : std::uint8_t {
-	Some,
-	HttpHead,
-};
-
-template<class Rcvr>
-struct ReadOp {
-	Rcvr rcvr;
-	Ctx* ctx;
-	int fd;
-	std::span<char> buffer;
-	ReadUntil until;
-	std::size_t received = 0;
-	Waiter waiter{};
-
-	auto start() & noexcept -> void {
-		attempt();
-	}
-
-	auto attempt() noexcept -> void {
-		for (;;) {
-			if (received == buffer.size()) {
-				stdexec::set_value(std::move(rcvr), received);
-				return;
-			}
-			auto const count = ::read(fd, buffer.data() + received, buffer.size() - received);
-			if (count > 0) {
-				received += static_cast<std::size_t>(count);
-				if (until == ReadUntil::Some || received == buffer.size() || head_complete()) {
-					stdexec::set_value(std::move(rcvr), received);
-					return;
-				}
-				continue;
-			}
-			if (count == 0) {
-				stdexec::set_value(std::move(rcvr), received);
-				return;
-			}
-			if (errno == EINTR) {
-				continue;
-			}
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				waiter = Waiter{&ReadOp::ready, this};
-				if (auto const rc = ctx->arm(fd, EVFILT_READ, &waiter); rc != 0) {
-					stdexec::set_error(std::move(rcvr), NetErr{stage_queue, rc});
-				}
-				return;
-			}
-			stdexec::set_error(std::move(rcvr), NetErr{stage_read, errno});
-			return;
-		}
-	}
-
-	[[nodiscard]] auto head_complete() const noexcept -> bool {
-		return std::string_view{buffer.data(), received}.find("\r\n\r\n") != std::string_view::npos;
-	}
-
-	static auto ready(void* self, bool canceled) noexcept -> void {
-		auto& op = *static_cast<ReadOp*>(self);
-		if (canceled) {
-			stdexec::set_stopped(std::move(op.rcvr));
-			return;
-		}
-		op.attempt();
-	}
-};
-
-struct ReadSender {
-	using sender_concept = stdexec::sender_t;
-	using completion_signatures =
-	    stdexec::completion_signatures<stdexec::set_value_t(std::size_t), stdexec::set_error_t(NetErr), stdexec::set_stopped_t()>;
-
-	Ctx* ctx;
-	int fd;
-	std::span<char> buffer;
-	ReadUntil until;
-
-	template<class Rcvr>
-	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> ReadOp<Rcvr> {
-		return {std::move(rcvr), ctx, fd, buffer, until};
-	}
-};
-
-[[nodiscard]] auto async_read(Ctx& ctx, int fd, std::span<char> buffer, ReadUntil until) noexcept -> ReadSender {
-	return {&ctx, fd, buffer, until};
-}
-
-/** Writes the whole span; partial writes and EAGAIN fold into the operation. */
-template<class Rcvr>
-struct WriteOp {
-	Rcvr rcvr;
-	Ctx* ctx;
-	int fd;
-	std::span<char const> data;
-	std::size_t sent = 0;
-	Waiter waiter{};
-
-	auto start() & noexcept -> void {
-		attempt();
-	}
-
-	auto attempt() noexcept -> void {
-		for (;;) {
-			if (sent == data.size()) {
-				stdexec::set_value(std::move(rcvr), sent);
-				return;
-			}
-			auto const count = ::write(fd, data.data() + sent, data.size() - sent);
-			if (count >= 0) {
-				sent += static_cast<std::size_t>(count);
-				continue;
-			}
-			if (errno == EINTR) {
-				continue;
-			}
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				waiter = Waiter{&WriteOp::ready, this};
-				if (auto const rc = ctx->arm(fd, EVFILT_WRITE, &waiter); rc != 0) {
-					stdexec::set_error(std::move(rcvr), NetErr{stage_queue, rc});
-				}
-				return;
-			}
-			stdexec::set_error(std::move(rcvr), NetErr{stage_write, errno});
-			return;
-		}
-	}
-
-	static auto ready(void* self, bool canceled) noexcept -> void {
-		auto& op = *static_cast<WriteOp*>(self);
-		if (canceled) {
-			stdexec::set_stopped(std::move(op.rcvr));
-			return;
-		}
-		op.attempt();
-	}
-};
-
-struct WriteSender {
-	using sender_concept = stdexec::sender_t;
-	using completion_signatures =
-	    stdexec::completion_signatures<stdexec::set_value_t(std::size_t), stdexec::set_error_t(NetErr), stdexec::set_stopped_t()>;
-
-	Ctx* ctx;
-	int fd;
-	std::span<char const> data;
-
-	template<class Rcvr>
-	[[nodiscard]] auto connect(Rcvr rcvr) const noexcept -> WriteOp<Rcvr> {
-		return {std::move(rcvr), ctx, fd, data};
-	}
-};
-
-[[nodiscard]] auto async_write(Ctx& ctx, int fd, std::span<char const> data) noexcept -> WriteSender {
-	return {&ctx, fd, data};
-}
-
-struct WorkerCore {
-	Ctx ctx;
-	int lfd = -1;
-	std::uint32_t id = 0;
-	RawHandler handler = nullptr;
-	bool restart = false;
-	bool finished = false;
-};
-
-/**
- * One full connection: the handler runs on this worker's thread, and
- * `c` lives in let_value's operation state, which outlives every inner
- * sender borrowing it.
- */
-auto make_chain(WorkerCore& w) {
-	return async_accept(w.ctx, w.lfd) | ex::let_value([&w](Conn& c) {
-		       return async_read(w.ctx, c.fd(), std::span<char>{c.in}, ReadUntil::HttpHead) | ex::let_value([&w, &c](std::size_t received) {
-			              auto const size =
-			                  received == 0 ? std::size_t{0} : w.handler(w.id, c.in.data(), received, c.out.data(), c.out.size());
-			              return async_write(w.ctx, c.fd(), std::span<char const>{c.out.data(), std::min(size, c.out.size())});
-		              }) |
-		              ex::then([](std::size_t) {});
-	       });
-}
-
-struct ChainReceiver {
-	using receiver_concept = stdexec::receiver_t;
-
-	WorkerCore* w;
-
-	auto set_value() && noexcept -> void {
-		w->restart = true;
-	}
-
-	auto set_error(NetErr err) && noexcept -> void {
-		if (err_transient(err.code)) {
-			w->restart = true;
-		} else {
-			w->finished = true;
-		}
-	}
-
-	/** Unreachable under -fno-exceptions; reaching it is process failure. */
-	auto set_error(std::exception_ptr) && noexcept -> void {
-		std::terminate();
-	}
-
-	auto set_stopped() && noexcept -> void {
-		w->finished = true;
-	}
-
-	[[nodiscard]] auto get_env() const noexcept -> stdexec::env<> {
-		return {};
-	}
-};
-
-using ChainOp = stdexec::connect_result_t<decltype(make_chain(std::declval<WorkerCore&>())), ChainReceiver>;
-
-/**
- * Operation states are immovable; the conversion operator materializes
- * one in place inside std::optional::emplace (guaranteed copy elision).
- */
-struct ChainFactory {
-	WorkerCore& w;
-
-	operator ChainOp() && {
-		return stdexec::connect(make_chain(w), ChainReceiver{&w});
-	}
-};
-
-struct Worker {
-	WorkerCore core;
-	std::optional<ChainOp> op;
-};
-
-/**
- * At every iteration the chain is finished, waiting for a restart, or
- * armed; on stop the armed case completes through the stopped channel
- * before its operation state is destroyed.
- */
-auto run_worker(Worker& worker) noexcept -> void {
-	auto& w = worker.core;
-	w.restart = true;
-	while (!w.finished) {
-		if (w.ctx.stopping) {
-			if (w.ctx.has_armed()) {
-				w.ctx.cancel_armed();
-			} else {
-				w.finished = true;
-			}
-			continue;
-		}
-		if (w.restart) {
-			w.ctx.poll();
-			if (w.ctx.stopping) {
-				continue;
-			}
-			w.restart = false;
-			worker.op.reset();
-			worker.op.emplace(ChainFactory{w});
-			stdexec::start(*worker.op);
-			continue;
-		}
-		w.ctx.run_one();
-	}
-	worker.op.reset();
-}
-
-/**
- * The one loopback listener, shared read-only by every worker —
- * accept(2) and kevent registration are thread-safe on a shared fd.
- * Loopback keeps the example and tests off the host firewall.
- */
-class Listener {
-public:
-	Listener() = default;
-
-	explicit Listener(int fd) noexcept : fd_{fd} {}
-
-	Listener(Listener&& other) noexcept : fd_{std::exchange(other.fd_, -1)} {}
-
-	auto operator=(Listener&& other) noexcept -> Listener& {
-		if (this != &other) {
-			close_fd();
-			fd_ = std::exchange(other.fd_, -1);
-		}
-		return *this;
-	}
-
-	Listener(Listener const&) = delete;
-	auto operator=(Listener const&) -> Listener& = delete;
-
-	~Listener() {
-		close_fd();
-	}
-
-	[[nodiscard]] auto fd() const noexcept -> int {
-		return fd_;
-	}
-
-private:
-	auto close_fd() noexcept -> void {
-		if (fd_ >= 0) {
-			::close(std::exchange(fd_, -1));
-		}
-	}
-
-	int fd_ = -1;
-};
-
-/* PIN(darwin-so-reuseport-no-lb): one shared raced listener, not per-worker SO_REUSEPORT — see PINS.md */
-[[nodiscard]] auto make_listener(std::uint16_t port, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> Listener {
-	auto fail = [&](std::int32_t stage, int fd) -> Listener {
-		err_stage = stage;
-		err_code = errno;
-		if (fd >= 0) {
-			::close(fd);
-		}
-		return Listener{};
-	};
-
-	auto const fd = ::socket(AF_INET, SOCK_STREAM, 0);
-	if (fd < 0) {
-		return fail(stage_socket, -1);
-	}
-	auto const one = 1;
-	if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) < 0) {
-		return fail(stage_option, fd);
-	}
-	auto addr = ::sockaddr_in{};
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(port);
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	/* SAFETY: sockaddr_in -> sockaddr is the bind(2) ABI's own aliasing rule */
-	if (::bind(fd, reinterpret_cast<::sockaddr const*>(&addr), sizeof addr) < 0) {
-		return fail(stage_bind, fd);
-	}
-	if (auto const rc = set_nonblocking(fd); rc != 0) {
-		errno = rc;
-		return fail(stage_nonblock, fd);
-	}
-	if (::listen(fd, listen_backlog) < 0) {
-		return fail(stage_listen, fd);
-	}
-	return Listener{fd};
-}
-
-[[nodiscard]] auto bound_port(int fd, std::int32_t& err_stage, std::int32_t& err_code) noexcept -> std::uint16_t {
-	auto addr = ::sockaddr_in{};
-	auto len = ::socklen_t{sizeof addr};
-	/* SAFETY: same sockaddr ABI aliasing as bind above */
-	if (::getsockname(fd, reinterpret_cast<::sockaddr*>(&addr), &len) < 0) {
-		err_stage = stage_resolve;
-		err_code = errno;
-		return 0;
-	}
-	return ntohs(addr.sin_port);
-}
-
-struct TaskReceiver {
-	using receiver_concept = stdexec::receiver_t;
-
-	std::latch* done;
-
-	auto set_value() && noexcept -> void {
-		done->count_down();
-	}
-
-	auto set_stopped() && noexcept -> void {
-		done->count_down();
-	}
-
-	auto set_error(std::exception_ptr) && noexcept -> void {
-		std::terminate();
-	}
-
-	[[nodiscard]] auto get_env() const noexcept -> stdexec::env<> {
-		return {};
-	}
-};
-
-using PoolScheduler = decltype(std::declval<ex::static_thread_pool&>().get_scheduler());
-
-auto make_task(PoolScheduler scheduler, Worker* worker) {
-	return ex::starts_on(scheduler, ex::just() | ex::then([worker] {
-		                                run_worker(*worker);
-	                                }));
-}
-
-using TaskOp = stdexec::connect_result_t<decltype(make_task(std::declval<PoolScheduler>(), nullptr)), TaskReceiver>;
-
-struct TaskFactory {
-	PoolScheduler scheduler;
-	Worker* worker;
-	std::latch* done;
-
-	operator TaskOp() && {
-		return stdexec::connect(make_task(scheduler, worker), TaskReceiver{done});
-	}
-};
-
-}
-
 [[nodiscard]] auto buffer_capacity() noexcept -> std::size_t {
 	return buffer_bytes;
 }
 
-struct Server {
-	Server(std::uint32_t worker_count, RawHandler request_handler)
-	    : count{worker_count}, handler{request_handler}, done{static_cast<std::ptrdiff_t>(worker_count)}, pool{worker_count} {}
+[[nodiscard]] auto connection_capacity() noexcept -> std::size_t {
+	return max_connections;
+}
 
-	std::uint32_t count;
-	RawHandler handler;
-	std::uint16_t port = 0;
-	std::latch done;
-	Listener listener{};
-	std::array<Worker, max_workers> workers{};
-	std::array<std::optional<TaskOp>, max_workers> tasks{};
-	/**
-	 * Declared after the task operation states: destruction joins the
-	 * pool threads before the operation states they may still be
-	 * unwinding through are destroyed.
-	 */
-	ex::static_thread_pool pool;
-	bool started = false;
-	bool stopped = false;
-};
+[[nodiscard]] auto timeout_capacity() noexcept -> std::chrono::milliseconds {
+	return std::chrono::milliseconds{max_timeout_milliseconds};
+}
 
-[[nodiscard]] auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage,
-                                std::int32_t& err_code) noexcept -> Server* {
-	err_stage = 0;
-	err_code = 0;
-	auto const count = std::clamp(workers, std::uint32_t{1}, max_workers);
-	auto server = std::unique_ptr<Server>{new Server{count, handler}};
-
-	/* PIN(darwin-so-reuseport-no-lb): workers race accepts on this one shared listener — see PINS.md */
-	server->listener = make_listener(port, err_stage, err_code);
-	if (server->listener.fd() < 0) {
-		return nullptr;
-	}
-	server->port = bound_port(server->listener.fd(), err_stage, err_code);
-	if (server->port == 0) {
-		return nullptr;
+[[nodiscard]] auto server_open(std::uint16_t port, std::size_t connection_count, std::chrono::milliseconds request_timeout,
+                               std::chrono::milliseconds response_timeout) noexcept -> std::expected<ServerOwner, WireError> {
+	if (connection_count == 0 || connection_count > max_connections || request_timeout.count() <= 0 || response_timeout.count() <= 0 ||
+	    request_timeout.count() > max_timeout_milliseconds || response_timeout.count() > max_timeout_milliseconds) {
+		return std::unexpected(wire_error(stage_configuration, EINVAL));
 	}
 
-	for (auto i = std::uint32_t{0}; i < count; ++i) {
-		auto& core = server->workers[i].core;
-		if (auto const rc = core.ctx.init(); rc != 0) {
-			err_stage = stage_queue;
-			err_code = rc;
-			return nullptr;
+	auto listener = make_listener(port);
+	if (!listener) {
+		return std::unexpected(listener.error());
+	}
+	auto resolved_port = bound_port(listener->get());
+	if (!resolved_port) {
+		return std::unexpected(resolved_port.error());
+	}
+	auto queue = Fd{::kqueue()};
+	if (!queue.valid()) {
+		return std::unexpected(wire_error(stage_queue, errno));
+	}
+
+	auto server = ServerOwner{new Server{connection_count}};
+	server->listener = std::move(*listener);
+	server->queue = std::move(queue);
+	server->port = *resolved_port;
+	server->request_timeout = request_timeout;
+	server->response_timeout = response_timeout;
+	return server;
+}
+
+[[nodiscard]] auto server_run(Server& server, RawHandler handler) noexcept -> std::expected<void, WireError> {
+	if (server.ran || handler == nullptr) {
+		return std::unexpected(wire_error(stage_configuration, EALREADY));
+	}
+	server.ran = true;
+
+	auto signal_guard = SignalGuard::make();
+	if (!signal_guard) {
+		return std::unexpected(wire_error(stage_signal, signal_guard.error()));
+	}
+	if (auto registered = register_signals(server); !registered) {
+		return registered;
+	}
+	if (auto armed = arm_listener(server); !armed) {
+		return armed;
+	}
+
+	auto events = std::array<::kevent64_s, 64>{};
+	for (;;) {
+		auto timeout = timeout_until(nearest_deadline(server));
+		auto const count =
+		    ::kevent64(server.queue.get(), nullptr, 0, events.data(), static_cast<int>(events.size()), 0, timeout ? &*timeout : nullptr);
+		if (count < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			return std::unexpected(wire_error(stage_queue, errno));
 		}
-		core.lfd = server->listener.fd();
-		core.id = i;
-		core.handler = handler;
+		expire_slots(server, Clock::now());
+		auto const ready = std::span{events}.first(static_cast<std::size_t>(count));
+		auto dispatched = dispatch(server, ready, handler);
+		if (!dispatched) {
+			return std::unexpected(dispatched.error());
+		}
+		if (*dispatched) {
+			return {};
+		}
+		if (auto armed = arm_listener(server); !armed) {
+			return armed;
+		}
 	}
-
-	auto const scheduler = server->pool.get_scheduler();
-	for (auto i = std::uint32_t{0}; i < count; ++i) {
-		server->tasks[i].emplace(TaskFactory{scheduler, &server->workers[i], &server->done});
-		stdexec::start(*server->tasks[i]);
-	}
-	server->started = true;
-	return server.release();
 }
 
 [[nodiscard]] auto server_port(Server const& server) noexcept -> std::uint16_t {
 	return server.port;
 }
 
-auto server_stop(Server& server) noexcept -> void {
-	if (!server.started || server.stopped) {
-		return;
-	}
-	server.stopped = true;
-	for (auto i = std::uint32_t{0}; i < server.count; ++i) {
-		server.workers[i].core.ctx.request_stop();
-	}
-	server.done.wait();
-}
-
-auto server_destroy(Server* server) noexcept -> void {
-	if (server == nullptr) {
-		return;
-	}
-	server_stop(*server);
+auto ServerDeleter::operator()(Server* server) const noexcept -> void {
 	delete server;
 }
 
-[[nodiscard]] auto hardware_worker_count() noexcept -> std::uint32_t {
-	auto const count = std::thread::hardware_concurrency();
-	return count == 0 ? 1 : count;
-}
-
-/**
- * Dispositions are set to SIG_IGN so default delivery cannot kill the
- * process first; EVFILT_SIGNAL still records ignored signals (kqueue
- * contract), so the kevent wait observes them. No handler runs user
- * code.
- */
-auto interrupt_wait() noexcept -> void {
-	static_cast<void>(std::signal(SIGINT, SIG_IGN));
-	static_cast<void>(std::signal(SIGTERM, SIG_IGN));
-	auto const kq = ::kqueue();
-	if (kq < 0) {
-		return;
-	}
-	auto changes =
-	    std::array{make_event(SIGINT, EVFILT_SIGNAL, EV_ADD, 0, nullptr), make_event(SIGTERM, EVFILT_SIGNAL, EV_ADD, 0, nullptr)};
-	if (::kevent(kq, changes.data(), static_cast<int>(changes.size()), nullptr, 0, nullptr) == 0) {
-		struct ::kevent event{};
-		while (::kevent(kq, nullptr, 0, &event, 1, nullptr) < 0 && errno == EINTR) {
-		}
-	}
-	::close(kq);
-}
-
 auto output_flush() noexcept -> void {
-	static_cast<void>(std::fflush(nullptr));
+	std::ignore = std::fflush(nullptr);
 }
 
 }

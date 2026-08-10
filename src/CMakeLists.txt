@@ -15,8 +15,11 @@ target_sources(starter_module
 )
 
 # PIN(gcc-template-for-wshadow): the :enums partition instantiates expansion
-# statements — see PINS.md
-target_compile_options(starter_module PRIVATE -Wno-shadow)
+# statements; source-scoped so every other partition retains -Wshadow — see
+# PINS.md
+set_source_files_properties(enums.cc PROPERTIES
+	COMPILE_OPTIONS -Wno-shadow
+)
 
 target_link_libraries(starter_module
 	PUBLIC

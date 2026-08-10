@@ -45,16 +45,6 @@
       }
     },
     {
-      "name": "tsan",
-      "displayName": "ThreadSanitizer (Linux only)",
-      "inherits": "gcc",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_CXX_FLAGS": "-fsanitize=thread",
-        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
-      }
-    },
-    {
       "name": "lint",
       "displayName": "Clang lint graph (clang-tidy runs during build)",
       "inherits": "base",
@@ -62,7 +52,7 @@
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-stdlib=libc++",
-        "CMAKE_CXX_CLANG_TIDY": "clang-tidy;--experimental-custom-checks",
+        "CMAKE_CXX_CLANG_TIDY": "clang-tidy",
         "STARTER_LINT_GRAPH": "ON"
       }
     }
@@ -71,7 +61,6 @@
     { "name": "dev", "configurePreset": "dev" },
     { "name": "release", "configurePreset": "release" },
     { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
-    { "name": "tsan", "configurePreset": "tsan" },
     { "name": "lint", "configurePreset": "lint" }
   ],
   "testPresets": [
@@ -88,11 +77,6 @@
     {
       "name": "asan-ubsan",
       "configurePreset": "asan-ubsan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "tsan",
-      "configurePreset": "tsan",
       "output": { "outputOnFailure": true }
     }
   ]

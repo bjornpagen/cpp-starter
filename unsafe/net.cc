@@ -1,36 +1,35 @@
-/**
- * Thread-per-core share-nothing networking: no mutable state is shared
- * between workers and no lock is visible at or above this surface
- * (concurrency model: unsafe/README.md).
- */
 export module starter:net;
 
 import std;
+import :http;
 
-/* PIN(gcc-gmf-stdexec-ice): narrow ABI to the plain backend TU — senders cannot cross the module boundary; see PINS.md */
 extern "C++" {
 namespace starter::net_backend {
 
 struct Server;
 
-using RawHandler = std::size_t (*)(std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity);
+struct ServerDeleter {
+	auto operator()(Server* server) const noexcept -> void;
+};
+
+using ServerOwner = std::unique_ptr<Server, ServerDeleter>;
+using WireError = std::array<std::int32_t, 2>;
+using RawHandler = std::optional<std::size_t> (*)(std::string_view request, std::span<char> out) noexcept;
 
 [[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool;
 
 [[nodiscard]] auto buffer_capacity() noexcept -> std::size_t;
 
-[[nodiscard]] auto server_start(std::uint16_t port, std::uint32_t workers, RawHandler handler, std::int32_t& err_stage,
-                                std::int32_t& err_code) noexcept -> Server*;
+[[nodiscard]] auto connection_capacity() noexcept -> std::size_t;
+
+[[nodiscard]] auto timeout_capacity() noexcept -> std::chrono::milliseconds;
+
+[[nodiscard]] auto server_open(std::uint16_t port, std::size_t connection_count, std::chrono::milliseconds request_timeout,
+                               std::chrono::milliseconds response_timeout) noexcept -> std::expected<ServerOwner, WireError>;
+
+[[nodiscard]] auto server_run(Server& server, RawHandler handler) noexcept -> std::expected<void, WireError>;
 
 [[nodiscard]] auto server_port(Server const& server) noexcept -> std::uint16_t;
-
-auto server_stop(Server& server) noexcept -> void;
-
-auto server_destroy(Server* server) noexcept -> void;
-
-[[nodiscard]] auto hardware_worker_count() noexcept -> std::uint32_t;
-
-auto interrupt_wait() noexcept -> void;
 
 auto output_flush() noexcept -> void;
 
@@ -39,159 +38,146 @@ auto output_flush() noexcept -> void;
 
 namespace starter {
 
-/**
- * Which stage of bringing up or running the server failed. Values mirror
- * the stage_* constants in net.backend.cc (narrow scalar ABI; keep in
- * sync).
- */
 export enum class NetStage : std::int32_t {
-	SocketCreate = 1,
-	SocketOption = 2,
-	SocketBind = 3,
-	SocketListen = 4,
-	SocketNonblock = 5,
-	QueueCreate = 6,
-	PortResolve = 7,
-	Accept = 8,
-	Read = 9,
-	Write = 10,
+	Configuration = 1,
+	SocketCreate = 2,
+	SocketOption = 3,
+	SocketBind = 4,
+	SocketListen = 5,
+	SocketNonblock = 6,
+	QueueCreate = 7,
+	SignalSetup = 8,
+	PortResolve = 9,
+	Accept = 10,
 };
 
-/**
- * The typed network error: the failing stage plus its errno payload.
- * Flows as a value through sender error channels and std::expected.
- */
 export struct [[nodiscard]] NetError {
 	NetStage stage;
 	std::int32_t code;
 
-	/**
-	 * Could the same operation, retried with nothing changed, plausibly
-	 * succeed? Peer casualties and resource pressure: yes. Structural
-	 * errnos and anything unrecognized: no. Stage-independent.
-	 */
+	/** Could the same operation plausibly succeed if retried later? */
 	[[nodiscard]] auto is_transient() const -> bool {
 		return net_backend::err_transient(code);
 	}
 
-	/* PIN(gcc-modules-defaulted-eq): spelled out, not = default — see PINS.md */
-	[[nodiscard]] constexpr auto operator==(NetError const& other) const -> bool {
-		return stage == other.stage && code == other.code;
-	}
+	[[nodiscard]] constexpr auto operator==(NetError const&) const -> bool = default;
 };
 
-/**
- * Wire-facing bounds: a request head and a response must each fit.
- * Verified against the backend's real capacity when a server starts.
- */
-export inline constexpr std::size_t max_request_bytes = 8192;
-export inline constexpr std::size_t max_response_bytes = 8192;
+export inline constexpr std::size_t max_connection_count = 128;
+export inline constexpr auto max_server_timeout = std::chrono::hours{24};
 
 export struct HttpServerConfig {
 	/** 0 requests a kernel-chosen ephemeral port. */
 	std::uint16_t port;
-	/** Clamped to [1, 4] by the backend. */
-	std::uint32_t workers;
+	std::size_t max_connections;
+	std::chrono::milliseconds request_timeout;
+	std::chrono::milliseconds response_timeout;
 };
 
-/**
- * Statelessness is structural — emptiness and default-initializability
- * let the handler cross the narrow ABI as a plain trampoline with zero
- * captured state.
- */
+export template<class T>
+concept ResponseResult = requires(T result) {
+	typename T::value_type;
+	typename T::error_type;
+	requires std::same_as<typename T::value_type, Response>;
+	{ result.has_value() } -> std::same_as<bool>;
+	{ *result } -> std::same_as<Response&>;
+};
+
 export template<class F>
-concept RequestHandler = std::is_empty_v<F> && std::default_initializable<F> &&
-                         requires(F const handler, std::uint32_t worker, std::string_view request, std::span<char> out) {
-	                         { handler(worker, request, out) } -> std::same_as<std::size_t>;
-                         };
+concept RequestHandler =
+    std::is_empty_v<F> && std::default_initializable<F> && ResponseResult<std::invoke_result_t<F const&, Request const&>>;
+
+namespace net_detail {
+
+[[nodiscard]] auto lift_error(net_backend::WireError error) -> NetError {
+	return NetError{.stage = static_cast<NetStage>(error[0]), .code = error[1]};
+}
+
+[[nodiscard]] auto write_to(Response const& response, std::span<char> out) -> std::optional<std::size_t> {
+	auto const encoded = write_response(response);
+	if (!encoded || encoded->size() > out.size()) {
+		return std::nullopt;
+	}
+	std::ignore = std::ranges::copy(*encoded, out.begin());
+	return encoded->size();
+}
+
+[[nodiscard]] auto error_response(std::uint16_t status, std::string reason, std::string_view body, std::span<char> out)
+    -> std::optional<std::size_t> {
+	return write_to(Response{.status = status, .reason = std::move(reason), .headers = {}, .body = std::string{body}}, out);
+}
+
+}
 
 /**
- * A unique capability over the backend's workers: stop() is idempotent
- * and returns once every worker has quiesced; destruction stops and
- * joins.
+ * A unique server capability. `run()` owns the event loop synchronously
+ * until SIGINT or SIGTERM; destruction releases all remaining connections.
  */
 export class [[nodiscard]] HttpServer {
 public:
-	HttpServer(HttpServer&& other) noexcept : impl_{std::exchange(other.impl_, nullptr)} {}
-
-	auto operator=(HttpServer&& other) noexcept -> HttpServer& {
-		if (this != &other) {
-			reset();
-			impl_ = std::exchange(other.impl_, nullptr);
-		}
-		return *this;
-	}
+	HttpServer(HttpServer&&) noexcept = default;
+	auto operator=(HttpServer&&) noexcept -> HttpServer& = default;
 
 	HttpServer(HttpServer const&) = delete;
 	auto operator=(HttpServer const&) -> HttpServer& = delete;
 
-	~HttpServer() {
-		reset();
-	}
+	~HttpServer() = default;
 
-	/** The port actually bound (resolves a config.port == 0 request). */
 	[[nodiscard]] auto port() const -> std::uint16_t {
 		contract_assert(impl_ != nullptr);
 		return net_backend::server_port(*impl_);
 	}
 
-	auto stop() -> void {
-		if (impl_ != nullptr) {
-			net_backend::server_stop(*impl_);
+	/** The stateless handler runs inline on the owner loop and must not block. */
+	template<RequestHandler F>
+	[[nodiscard]] auto run() -> std::expected<void, NetError> {
+		contract_assert(impl_ != nullptr);
+		auto const result =
+		    net_backend::server_run(*impl_, [](std::string_view input, std::span<char> out) noexcept -> std::optional<std::size_t> {
+			    auto const request = parse_request(input);
+			    if (!request) {
+				    if (request.error().kind == HttpErrorKind::MessageTooLarge || request.error().kind == HttpErrorKind::TooManyHeaders) {
+					    return net_detail::error_response(431, "Request Header Fields Too Large", "request headers too large\n", out);
+				    }
+				    return net_detail::error_response(400, "Bad Request", "bad request\n", out);
+			    }
+			    auto const response = F{}(*request);
+			    if (!response) {
+				    return net_detail::error_response(500, "Internal Server Error", "internal server error\n", out);
+			    }
+			    auto const written = net_detail::write_to(*response, out);
+			    if (!written) {
+				    return net_detail::error_response(500, "Internal Server Error", "internal server error\n", out);
+			    }
+			    return *written;
+		    });
+		if (!result) {
+			return std::unexpected(net_detail::lift_error(result.error()));
 		}
+		return {};
 	}
 
-	/** Usable only by serve_http: importers cannot name net_backend::Server. */
-	explicit HttpServer(net_backend::Server& impl) : impl_{&impl} {}
+	/** Usable only by open_http: importers cannot name the backend owner. */
+	explicit HttpServer(net_backend::ServerOwner owner) : impl_{std::move(owner)} {}
 
 private:
-	auto reset() -> void {
-		if (impl_ != nullptr) {
-			net_backend::server_destroy(std::exchange(impl_, nullptr));
-		}
-	}
-
-	net_backend::Server* impl_;
+	net_backend::ServerOwner impl_;
 };
 
-/**
- * Starts config.workers share-nothing workers (clamped to [1, 4]), each
- * owning its own io-context, racing accepts on one shared loopback
- * listener. On failure no server exists — nothing to clean up; the
- * NetError's stage and errno say what refused, and is_transient()
- * answers the retry question. After startup, a worker hit by a
- * transient error keeps serving; one hit by a permanent error quiesces
- * silently while the remaining workers serve on — stop() still joins
- * every worker. Loopback-only by design: not a public-interface
- * listener.
- */
-export template<RequestHandler F>
-[[nodiscard]] auto serve_http(HttpServerConfig config, F) -> std::expected<HttpServer, NetError> {
+/** Opens a bounded loopback server without starting its event loop. */
+export [[nodiscard]] auto open_http(HttpServerConfig config) -> std::expected<HttpServer, NetError> {
 	contract_assert(net_backend::buffer_capacity() == max_request_bytes);
-	auto stage = std::int32_t{0};
-	auto code = std::int32_t{0};
-	auto* impl = net_backend::server_start(
-	    config.port, config.workers,
-	    [](std::uint32_t worker, char const* data, std::size_t size, char* out, std::size_t capacity) -> std::size_t {
-		    return F{}(worker, std::string_view{data, size}, std::span<char>{out, capacity});
-	    },
-	    stage, code);
-	if (impl == nullptr) {
-		return std::unexpected(NetError{.stage = static_cast<NetStage>(stage), .code = code});
+	contract_assert(net_backend::buffer_capacity() == max_response_bytes);
+	contract_assert(net_backend::connection_capacity() == max_connection_count);
+	contract_assert(net_backend::timeout_capacity() == std::chrono::duration_cast<std::chrono::milliseconds>(max_server_timeout));
+	auto opened = net_backend::server_open(config.port, config.max_connections, config.request_timeout, config.response_timeout);
+	if (!opened) {
+		return std::unexpected(net_detail::lift_error(opened.error()));
 	}
-	return HttpServer{*impl};
+	return HttpServer{std::move(*opened)};
 }
 
-export [[nodiscard]] auto hardware_workers() -> std::uint32_t {
-	return net_backend::hardware_worker_count();
-}
-
-/** Blocks until SIGINT or SIGTERM; no signal handler runs user code. */
-export auto wait_for_interrupt() -> void {
-	net_backend::interrupt_wait();
-}
-
-/** Call before blocking: stdout is fully buffered when piped. */
+/** Flushes C stdout before entering the blocking server loop. */
 export auto flush_output() -> void {
 	net_backend::output_flush();
 }

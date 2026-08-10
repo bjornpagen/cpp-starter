@@ -1,37 +1,50 @@
-# The :exec partition is still a partition of the single starter module
-# target defined in src/CMakeLists.txt (same arrangement as unsafe/'s :net).
-target_sources(starter_module
-	PUBLIC
-		FILE_SET CXX_MODULES
-		FILES
-			${CMAKE_CURRENT_SOURCE_DIR}/exec.cc
+if(NOT STARTER_LINT_GRAPH)
+	target_sources(starter_module
+		PUBLIC
+			FILE_SET CXX_MODULES
+			FILES
+				${CMAKE_CURRENT_SOURCE_DIR}/exec.cc
+	)
+endif()
+
+add_library(starter_stdexec_vendor INTERFACE)
+
+target_include_directories(starter_stdexec_vendor SYSTEM INTERFACE
+	${stdexec_SOURCE_DIR}/include
 )
 
-# PIN(gcc-gmf-stdexec-ice): the combinator half of the swap boundary stays a
-# plain module-free TU — see PINS.md. Scanning and the synthesized std module
-# are off because this TU may never import or be imported.
+# PIN(gcc-gmf-stdexec-ice): the vendor boundary stays a plain module-free TU
+# — see PINS.md. Scanning and the synthesized std module are off because this
+# TU may never import or be imported.
 add_library(starter_exec_backend STATIC
 	exec.backend.cc
 )
 
-# -Wno-null-dereference: middle-end warning ignores the SYSTEM suppression
-# once stdexec's intrusive-queue splice inlines at -O2; source-level property
-# so it lands after the profile's flag, which stays on everywhere else.
 set_source_files_properties(exec.backend.cc PROPERTIES
 	CXX_SCAN_FOR_MODULES OFF
-	COMPILE_OPTIONS -Wno-null-dereference
+)
+
+# Source options follow transitive profile options, so this narrowly overrides
+# the profile warning only for the one affected vendor TU and personality.
+set_property(SOURCE exec.backend.cc APPEND PROPERTY COMPILE_OPTIONS
+	"$<$<CONFIG:RelWithDebInfo>:-Wno-null-dereference>"
 )
 
 set_target_properties(starter_exec_backend PROPERTIES CXX_MODULE_STD OFF)
 
-# Vendored headers visible to this target only; SYSTEM keeps -Werror clean
-# (stdexec emits -Wmissing-field-initializers under -Wextra).
-target_include_directories(starter_exec_backend SYSTEM PRIVATE
-	${stdexec_SOURCE_DIR}/include
-)
+if(STARTER_LINT_GRAPH)
+	# PIN(stdexec-tooling-carveouts): stdexec operation states intentionally
+	# contain self-references, and moving a generic sender is semantically required.
+	set_property(TARGET starter_exec_backend APPEND PROPERTY CXX_CLANG_TIDY
+		"--checks=-clang-analyzer-core.StackAddressEscape,-performance-move-const-arg"
+	)
+endif()
 
-# UBSan carve-out (probe-verified): these sub-checks break COMPILATION of
-# stdexec's consteval signature machinery; a no-op without sanitizers.
+# PIN(stdexec-tooling-carveouts): these UBSan sub-checks prevent stdexec's
+# consteval signature machinery from compiling; a no-op without sanitizers.
+# GCC also produces a false positive from stdexec's intrusive queue only in
+# the optimized sanitizer personality; keep -Wnull-dereference enabled in
+# every project TU and in ordinary vendor builds.
 target_compile_options(starter_exec_backend PRIVATE
 	-fno-sanitize=null,nonnull-attribute,returns-nonnull-attribute
 )
@@ -39,9 +52,12 @@ target_compile_options(starter_exec_backend PRIVATE
 target_link_libraries(starter_exec_backend
 	PRIVATE
 		starter_language_profile
+		starter_stdexec_vendor
 )
 
-target_link_libraries(starter_module
-	PRIVATE
-		starter_exec_backend
-)
+if(NOT STARTER_LINT_GRAPH)
+	target_link_libraries(starter_module
+		PRIVATE
+			starter_exec_backend
+	)
+endif()

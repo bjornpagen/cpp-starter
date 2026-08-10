@@ -38,6 +38,13 @@ using Expected = std::expected<std::int32_t, starter::ExecError>;
 	};
 }
 
+[[nodiscard]] auto check_error_classification() -> CaseResult {
+	return CaseResult{
+	    .name = "opaque execution errors default to permanent",
+	    .passed = !starter::ExecError{123}.is_transient(),
+	};
+}
+
 [[nodiscard]] auto check_stopped() -> CaseResult {
 	return CaseResult{
 	    .name = "wait's stopped channel is nullopt, distinct from any error",
@@ -62,14 +69,14 @@ using Expected = std::expected<std::int32_t, starter::ExecError>;
 [[nodiscard]] auto check_stopped_as_optional_value() -> CaseResult {
 	return CaseResult{
 	    .name = "stopped_as_optional passes a value through engaged",
-	    .passed = starter::exec_stopped_as_optional_chain(false, 41) == starter::ExecResult{Expected{41}},
+	    .passed = starter::exec_stopped_as_optional_chain(starter::StopMode::Complete, 41) == starter::ExecResult{Expected{41}},
 	};
 }
 
 [[nodiscard]] auto check_stopped_as_optional_stopped() -> CaseResult {
 	return CaseResult{
 	    .name = "stopped_as_optional materializes stopped as the disengaged marker",
-	    .passed = starter::exec_stopped_as_optional_chain(true, 41) == starter::ExecResult{Expected{-1}},
+	    .passed = starter::exec_stopped_as_optional_chain(starter::StopMode::Stop, 41) == starter::ExecResult{Expected{-1}},
 	};
 }
 
@@ -81,6 +88,7 @@ auto main() -> int {
 	    check_error_recovery(),
 	    check_error_reroute(),
 	    check_error_passthrough(),
+	    check_error_classification(),
 	    check_stopped(),
 	    check_pool_when_all(),
 	    check_variant_roundtrip(),

@@ -1,56 +1,40 @@
 # unsafe/
 
-Quarantine for machine-level primitives that the dialect forbids elsewhere:
-compiler intrinsics, syscalls, atomics and locks used to implement
-higher-level concurrency primitives, pointer arithmetic required by an ABI or
-memory primitive, and `reinterpret_cast` required by a boundary.
+Quarantine for machine interfaces the dialect cannot express directly. It may
+include OS headers and use transient ABI pointers, but it does not relax the
+ownership model.
 
 Rules:
 
-- Every primitive must export a safe module partition (or narrow ABI)
-  upward.
-- `std::mutex`, `std::atomic`, explicit memory orders, and friends are only
-  legal here, and only to implement an approved abstraction (actor,
-  serialized executor, arena, ...).
-- Do not move ordinary application code here to escape a rule.
+- every descriptor and allocation has one RAII owner,
+- no raw pointer owns storage,
+- no pointer to application or operation state is stored asynchronously,
+- no kernel user-data field contains an address,
+- syscall buffers are borrowed only for the duration of the syscall,
+- readiness is returned as a typed fact to caller-owned state,
+- every exported surface is owning, bounded, and typed.
 
-## The net backend's concurrency model
+## Network backend
 
-`net.cc` exports the dialect-clean `starter:net` surface; every socket and
-kevent syscall and every sender composition lives in `net.backend.cc`, a
-plain (non-module) TU reached through an `extern "C++"` narrow ABI — the
-I/O half of the stdexec swap boundary (the combinator half is
-`foreign/exec.backend.cc`; why the boundary is two plain TUs: PINS.md
-`gcc-gmf-stdexec-ice`). What crosses the ABI is concrete: an opaque Server
-handle plus scalar-and-fn-pointer entry points.
+`net.backend.cc` is the Darwin syscall adapter. `net.cc` exports the safe
+`starter:net` partition.
 
-The model is thread-per-core, share-nothing:
+The server has one owner thread and one `kevent64` loop. A fixed-capacity slot
+array owns all active connections; configuration selects an active prefix.
+Each slot contains a closed state variant, its descriptor, fixed
+request/response buffers, progress counters, an absolute deadline, and a
+generation. Kernel events contain only an encoded
+`{slot, generation}` integer. Closing or expiring a slot advances its
+generation, so a queued stale event cannot name the new occupant.
 
-- One worker per pool thread — the pool has exactly one thread per worker,
-  so this is thread-per-core, not oversubscription — and each worker owns
-  its OWN kqueue reactor. No mutable state is shared between workers, and
-  no lock is visible in or above the backend TU.
-- ONE shared nonblocking loopback listener is armed in every worker's
-  kqueue and the workers race `accept(2)`: a lost race is just EAGAIN,
-  which re-arms. Per-worker SO_REUSEPORT listeners are deliberately NOT
-  used — Darwin does not load-balance them (PINS.md
-  `darwin-so-reuseport-no-lb`). Loopback keeps the example and tests off
-  the host firewall.
-- A worker's connection chain is a straight-line sender composition —
+The loop processes signal events before ordinary readiness, expires absolute
+deadlines, and performs accept/read/write transitions directly. It has no
+worker pool, locks, callbacks, opaque self pointers, intrusive waiter nodes,
+or sender operation-state borrows.
 
-      async_accept | let_value( async_read | let_value( handler; async_write ))
-
-  — restarted after every completion: accept, read the request head, run
-  the handler into the response buffer, write the response, close (the
-  connection is RAII-owned by the chain's operation state). The handler
-  runs on the owning worker's thread.
-- The reactor is a single-waiter scheduler by construction: the
-  straight-line chain suspends on at most one fd at a time, so one
-  armed-waiter slot is the entire scheduler state. Registrations are
-  oneshot — the kernel deletes the event on delivery, so normal operation
-  leaves no stale registrations behind — and on stop an armed waiter is
-  completed through the stopped channel before its operation state is
-  destroyed.
-- The only cross-thread entries are `Ctx::request_stop` (a kevent
-  NOTE_TRIGGER on the worker's own kqueue, thread-safe by the kevent
-  contract) and the stop/join latch.
+The narrow module/backend boundary carries an opaque uniquely owned server,
+standard owning/error values, and one stateless synchronous handler function.
+Views crossing that call are valid only for the call and are never retained.
+The public handler above that trampoline sees no buffer: it consumes an owning
+request and returns an owning response value. It executes inline on the owner
+loop, so it must be bounded and nonblocking.

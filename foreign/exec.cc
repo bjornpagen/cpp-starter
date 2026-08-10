@@ -33,10 +33,17 @@ namespace starter {
 export struct [[nodiscard]] ExecError {
 	std::int32_t code;
 
-	/* PIN(gcc-modules-defaulted-eq): spelled out, not = default — see PINS.md */
-	[[nodiscard]] constexpr auto operator==(ExecError const& other) const -> bool {
-		return code == other.code;
+	/** Opaque boundary codes have no known retry condition. */
+	[[nodiscard]] constexpr auto is_transient() const -> bool {
+		return false;
 	}
+
+	[[nodiscard]] constexpr auto operator==(ExecError const&) const -> bool = default;
+};
+
+export enum class StopMode : std::uint8_t {
+	Complete,
+	Stop,
 };
 
 /**
@@ -101,8 +108,8 @@ export [[nodiscard]] auto exec_variant_roundtrip(std::int32_t value) -> ExecResu
  * stopped_as_optional: value passes through engaged; stopped
  * materializes as the disengaged marker -1 instead of ending the chain.
  */
-export [[nodiscard]] auto exec_stopped_as_optional_chain(bool stop, std::int32_t value) -> ExecResult {
-	return lift(exec_backend::stopped_as_optional_chain(stop, value));
+export [[nodiscard]] auto exec_stopped_as_optional_chain(StopMode mode, std::int32_t value) -> ExecResult {
+	return lift(exec_backend::stopped_as_optional_chain(mode == StopMode::Stop, value));
 }
 
 }

@@ -40,6 +40,7 @@ alternative.
 | Optionality | `std::optional<T>` | null sentinels, magic values |
 | Async effects | `std::execution` sender/receiver | `std::async`, raw futures/promises, direct coroutines, detached callbacks |
 | Parallel composition | sender combinators such as `when_all` | manually coordinated threads |
+| Kernel readiness | typed event values + one owner-driven state machine | callbacks, opaque self pointers, addresses in kernel user data |
 | Resource lifetime | RAII | manual cleanup paths |
 | Dynamic ownership | `std::unique_ptr<T>` when a value cannot suffice | raw owning pointers, `shared_ptr`, `weak_ptr` |
 | Required borrow | `T&` / `T const&` | raw pointers |
@@ -61,12 +62,13 @@ the missing primitive before introducing a second way.
 
 ## 2. Toolchain
 
-Production code targets exactly one pinned toolchain tuple: the production
-compiler + its matching standard library, the build system, the generator, and
-the separately pinned clang-tidy build for the reflection-free lint graph.
+Production code targets one pinned toolchain tuple: the production compiler +
+its matching standard library, the build system, the generator, and the
+separately pinned clang-tidy build for the reflection-free lint graph.
 
-The exact versions are enforced by the top-level CMake configure gate. They
-live there and only there; documentation must not duplicate version numbers.
+The accepted release series and the exact generator are enforced by the
+top-level CMake configure gate. They live there and only there; documentation
+must not duplicate version numbers.
 Toolchain versions are part of the language implementation, not ambient
 developer-machine state.
 
@@ -102,6 +104,11 @@ Clang, MSVC, or alternative standard libraries inside dialect code.
 
 The configure/build step decides whether the pinned toolchain is acceptable.
 Translation units do not perform feature negotiation.
+
+The current machine boundary supports Darwin only. The configure gate rejects
+other systems; adding a platform means adding one explicit foreign
+implementation and selecting it in the build graph, not conditionalizing
+dialect code.
 
 ---
 
@@ -211,7 +218,6 @@ Provide exactly the supported build personalities, such as:
 dev
 release
 asan-ubsan
-tsan
 lint
 ```
 
@@ -225,25 +231,33 @@ the reflection-free lint graph.
 
 Enable compilation database generation for configurations consumed by tooling.
 
-### 3.5 One language-profile target
+### 3.5 One centralized language profile
 
-Compiler and language-profile requirements must be centralized in one CMake
-interface target (for example `project_language_profile`) and linked by every
-dialect target.
-
-That target is the single build-system source of truth for requirements such as:
+CMake's synthesized standard-library module target does not consume project
+usage-requirement targets. Module-ABI requirements therefore live once at top
+level so the synthesized BMI and every importer receive the same settings:
 
 ```text
 C++26
 -freflection             GCC production graph only
 -fno-exceptions
 -fno-rtti
+```
+
+All project targets additionally link one CMake interface target (for example
+`project_language_profile`). It is the single source of truth for target usage
+requirements such as:
+
+```text
 warnings-as-errors
 conversion warnings
 project-wide diagnostics
+contracts runtime linkage
 ```
 
-Do not duplicate the language profile across individual targets.
+Do not duplicate either half across individual targets, and do not spell a
+module-ABI flag both globally and per target. The split exists only because the
+CMake-owned BMI cannot link the interface target.
 
 Foreign/unsafe targets may link a separate narrowly defined profile containing
 only the exceptions required by that boundary.
@@ -255,11 +269,10 @@ Do not point clang-tidy at GCC-produced BMIs.
 Maintain:
 
 ```text
-build/gcc-dev/
-build/gcc-release/
-build/gcc-asan-ubsan/
-build/gcc-tsan/
-build/clang-lint/
+build/dev/
+build/release/
+build/asan-ubsan/
+build/lint/
 ```
 
 The GCC graph includes every named module and all reflection code.
@@ -318,22 +331,23 @@ repository, GCC-only reflection translation units are excluded from clang-tidy.
 This does **not** weaken the language rules. GCC-only files obey this document
 and are checked by compiler diagnostics plus review.
 
-Maintain the dedicated `clang-lint` CMake/Ninja graph for translation units
+Maintain the dedicated `lint` CMake/Ninja graph for translation units
 whose entire parse/import graph is Clang-readable. A named module containing
 reflection partitions is excluded from that graph as a unit until the pinned
 Clang frontend supports the reflection syntax used by the project.
 Build Clang-compatible BMIs there; never attempt to feed GCC BMIs to
 clang-tidy.
 
-Pin the clang-tidy version. Query-based custom checks are experimental; tool
-upgrades require deliberate review of `.clang-tidy`, `-list-checks`, and
-`--dump-config`.
+Pin the clang-tidy version. Tool upgrades require deliberate review of
+`.clang-tidy`, `-list-checks`, and `--dump-config`.
 
-Run query-based rules with:
-
-```text
-clang-tidy --experimental-custom-checks ...
-```
+The current `.clang-tidy` is a quarantine profile because the entire
+Clang-readable graph is `foreign/` and `unsafe/`. It checks boundary code for
+real correctness, lifetime, concurrency, portability, and performance defects;
+it does not flag the raw pointers, ABI casts, or C APIs that define the reason
+those zones exist. Do not encode dialect-only bans in that profile. When Clang
+can parse the reflection-bearing module graph, add a separate dialect profile
+and target rather than weakening or conflating either rule set.
 
 A clang-tidy warning is a build failure.
 
@@ -346,9 +360,12 @@ dialect code.
 
 The repository has two semantic zones.
 
-### 5.1 `src/`, `tests/`, and `examples/`: dialect code
+### 5.1 C++ in `src/`, `tests/`, and `examples/`: dialect code
 
-All rules in this document apply.
+All C++ translation units in these directories are dialect code and obey every
+language rule in this document. CMake metadata and narrow test-driver scripts
+are repository tooling, not an alternate C++ source zone; they may not compile
+or generate project code behind the declared CMake graph.
 
 No preprocessor.
 No headers.
@@ -381,6 +398,13 @@ requires them.
 They must export a safe module partition or narrow ABI upward. No dialect
 module unit may include a foreign header or depend on preprocessor state
 transitively.
+
+Quarantine relaxes representation rules, not ownership rules. Project-authored
+quarantine code still has exactly one RAII owner for every resource and heap
+allocation. Raw pointers may be transient syscall/ABI arguments; they may not
+own, may not be stored as asynchronous state, and may not be placed in a
+kernel event for later dereference. Kernel APIs return facts into caller-owned
+storage. The owning loop decides what those facts mean.
 
 Do not move ordinary application code into `unsafe/` to escape a rule.
 
@@ -428,7 +452,7 @@ import std;
 import project;
 ```
 
-The single allowed project source extension is:
+The single allowed C++ source extension is:
 
 ```text
 .cc
@@ -720,7 +744,9 @@ Prefer values.
 Use `std::unique_ptr<T>` only when dynamic stable ownership is actually
 required.
 
-Use an arena when many objects share one obvious lifetime or stable storage.
+Use ordinary owning standard containers before inventing an arena. An arena is
+permitted only when many objects demonstrably share one lifetime and its reset
+boundary is the ownership boundary, not as a performance reflex.
 
 ### Forbidden
 
@@ -765,8 +791,16 @@ semantic need not covered by these primitives.
 ### Lifetime rules
 
 - Synchronous function parameters may borrow.
-- Owning structs do not contain borrows unless the type is explicitly an
-  ephemeral view product (`FooView` naming).
+- Public parsers and decoders return owning values. A temporary input must be
+  safe: `parse(std::string{...})` may not return data referring to that string.
+- Public protocol handlers consume owning request values by reference and
+  return owning response values. Writable reactor buffers and byte-count
+  bookkeeping do not escape the quarantine trampoline.
+- Owning structs do not contain borrows. An explicitly ephemeral `FooView`
+  product is permitted only inside one synchronous call chain and is never a
+  public parser result.
+- A returned view is permitted only when it refers to immutable
+  program-lifetime storage, such as a string literal or reflected name.
 - Values crossing an async/sender boundary must be owned.
 - A sender returned from a function must not capture locals or parameters by
   reference.
@@ -774,6 +808,36 @@ semantic need not covered by these primitives.
 - Messages between concurrent components must be ownership-closed: recursively
   free of references, `std::optional<T&>`, `std::span`, `std::string_view`, and
   `std::function_ref`.
+- When ownership and borrowing are both viable, copy at the lifetime boundary.
+  Bounded copying is cheaper than maintaining a soundness proof that C++ cannot
+  check.
+
+### Guarantee boundary
+
+Following this profile makes several bug classes structurally absent from
+dialect designs:
+
+- raw-owner double-free, ownership use-after-free, and reference-count cycles,
+- public parser results dangling into temporary input,
+- kernel readiness dereferencing a destroyed operation or application object,
+- an application handler overrunning or miscounting the reactor's response
+  buffer.
+
+This is not general lifetime analysis. Required references and synchronous
+views can still dangle when code violates the call-scoped borrowing rule;
+indices and iterators can still be wrong; stack depth can still overflow; and
+`unsafe/`, `foreign/`, the compiler, the standard library, or a vendor can still
+contain pointer, aliasing, concurrency, or ABI defects. Therefore:
+
+- prefer an owning value whenever a borrow is not both necessary and visibly
+  call-scoped,
+- never retain a borrow through a returned value, callback, sender, kernel
+  registration, or concurrent message,
+- keep every unavoidable pointer cast, arithmetic operation, or stored borrow
+  in a tiny reviewed quarantine boundary with a `/* SAFETY: ... */`
+  justification,
+- run the sanitizer and lint presets; policy narrows the remaining attack
+  surface but does not replace verification.
 
 ---
 
@@ -874,25 +938,21 @@ ad-hoc callback concurrency
 
 ### Toolchain status
 
-Sender/receiver is **active**: the pinned libstdc++ does not yet ship
-`std::execution`, so the algebra is provided by the reference implementation
-(NVIDIA stdexec, pinned to an immutable SHA in the top-level CMakeLists.txt
-per §3.7) and quarantined behind exactly one swap boundary, re-exported as
-`namespace ex`. The vocabulary rules above bind for real now — they are not
-aspirational.
+Sender/receiver is **active** for application-level composition and its
+conformance surface: the pinned libstdc++ does not yet ship `std::execution`,
+so the algebra is provided by the reference implementation (NVIDIA stdexec,
+pinned to an immutable SHA in the top-level CMakeLists.txt per §3.7) and
+quarantined behind one foreign swap boundary. It is not the implementation
+model for a kernel reactor. A syscall adapter reports readiness as data; an
+owner-driven state machine advances resources explicitly.
 
 Boundary law:
 
-- There is exactly ONE swap boundary, spelled across exactly two plain
-  quarantine translation units: `foreign/exec.backend.cc` (the combinator
-  half — `namespace ex` plus the conformance chains) and
-  `unsafe/net.backend.cc` (the I/O half — the kqueue io-context and its
-  readiness senders). Those two TUs are the only ones that may include a
+- There is exactly ONE vendor swap boundary:
+  `foreign/exec.backend.cc`. It is the only project file that may include a
   stdexec header or spell the implementation namespaces (`stdexec::`,
-  `exec::`); the eventual swap edits only them. Direct
-  implementation-namespace use anywhere else — dialect code, the rest of
-  `unsafe/`, the rest of `foreign/` — is forbidden, and no third stdexec TU
-  may be added: new sender work extends one of the two halves.
+  `exec::`). Direct implementation-namespace use anywhere else is forbidden.
+  Kernel backends do not participate in this boundary.
 - `ex::` re-exports only the probe-verified combinator subset (`just`,
   `then`, `upon_error`, `let_value`, `let_error`, `when_all`,
   `continues_on`, `starts_on`, `schedule`, `on`, `into_variant`,
@@ -904,16 +964,50 @@ Boundary law:
   error masquerades as stopped). `ex::wait<E>` returns
   `optional<expected<values, E>>` — nullopt is stopped, unexpected preserves
   the typed error.
-- Pinned GCC 16.1 quirk: including a stdexec header in **any** module unit
+- Pinned GCC quirk: including a stdexec header in **any** module unit
   ICEs (global-module-fragment CPO forward-declaration pattern; rationale
   pinned in `foreign/exec.backend.cc`). Sender composition therefore cannot
   cross the module boundary on this toolchain: the `starter:exec` partition
   exports concrete function surfaces over a narrow ABI, not senders.
   Re-verify on every toolchain bump.
-- The `__cpp_lib_senders` tombstone in `tests/conformance.test.cc` now
-  signals time-to-delete-the-vendor: when the macro appears, rewrite the
-  boundary over `std::execution`, drop the FetchContent pin, and re-export
-  the full vocabulary directly.
+- On every pinned-toolchain bump, the `PINS.md` ritual checks for native
+  senders. Once the standard library provides them, rewrite the boundary over
+  `std::execution`, drop the FetchContent pin, and re-export the full
+  vocabulary directly. Do not reintroduce feature-test preprocessing into a
+  dialect translation unit to automate that deliberate migration.
+
+### Reactor law
+
+The repository's kernel-reactor model follows the skalibs `iopause` shape:
+prepare caller-owned interest records, wait, receive readiness facts, then
+advance an explicit state machine.
+
+- One thread owns and mutates a reactor and every resource registered in it.
+- Kernel user data contains an integer token, never an address. A token is a
+  slot index plus a generation; stale generations are ignored.
+- Slots own their descriptors, buffers, deadlines, and closed state variant.
+  The kernel owns none of them and cannot cause an address to be dereferenced.
+- Readiness callbacks, `void* self`, intrusive waiter nodes, and operation-state
+  pointers are forbidden, including in `unsafe/`.
+- Slot storage is bounded and allocated at setup. It is never resized while
+  tokens can exist.
+- Cancellation/expiry invalidates the generation before a slot is reusable.
+- A returned event batch is inspected for stop events before ordinary work;
+  reclamation occurs only under the owning loop.
+- The default server is single-threaded. If CPU scaling becomes necessary,
+  prefer supervised processes and value-based IPC. Do not add shared-memory
+  workers merely to consume cores.
+- The default server selects an empty, default-constructible handler type at
+  compile time. It stores no callback and no borrow of application state. A
+  stateful service requires a new explicit ownership model; do not smuggle a
+  context pointer or captured reference through the reactor.
+- The handler executes inline on the owner loop. It must be bounded and
+  nonblocking; blocking I/O or an unbounded computation stalls every
+  connection and requires an explicit process/capability design instead.
+
+The reactor may be imperative inside `unsafe/`; it implements a synchronous
+resource capability, not a second application async algebra. A future public
+asynchronous surface wraps that capability in a sender at the module boundary.
 
 ### Shared mutable state
 
@@ -932,11 +1026,16 @@ restricted to `unsafe/` concurrency primitives.
 
 No lock may survive an async suspension boundary.
 
+The default network server has no shared mutable state and no worker threads.
+ThreadSanitizer is added as a preset only when the supported build graph
+contains project-authored concurrent code on a platform with a working runtime;
+an empty or unbuildable sanitizer personality is forbidden.
+
 ### Time and deadlines
 
 Waiting is spelled with absolute deadlines, never relative timeouts.
 
-- Any API that waits, expires, or retries with backoff takes and stores a
+- Every active wait, expiry, or backoff state stores a
   `std::chrono::steady_clock::time_point` — a deadline — not a duration.
 - Only the `*_until` spelling of a waiting primitive is dialect; the
   `*_for` family is forbidden. A relative timeout drifts: a wait that is
@@ -945,9 +1044,9 @@ Waiting is spelled with absolute deadlines, never relative timeouts.
   spurious wakeup lands in production. A deadline cannot drift — the
   remaining time is recomputed (`deadline - now()`) at the last moment
   before each syscall, and re-arming is idempotent.
-- Durations exist only at the edge where a deadline is minted:
-  configuration may say "5 seconds"; the code that reads it converts
-  once, immediately, and only the deadline travels.
+- A reusable configuration may express a timeout policy as a duration. Each
+  operation converts that policy exactly once, when the operation begins;
+  only the resulting deadline travels through active state and re-arms.
 - Deadlines use `steady_clock`, never `system_clock`: wall clocks jump.
 
 ---
@@ -1202,6 +1301,12 @@ Do not introduce printf-family formatting.
 
 Binary I/O should use typed byte/span APIs and explicit codecs.
 
+Protocol framing has one owner. The HTTP response writer derives
+`Content-Length`, fixes connection-close semantics, and rejects caller-supplied
+`Content-Length`, `Transfer-Encoding`, or `Connection` fields. Application
+handlers return an owning response value; they do not serialize into reactor
+storage.
+
 ---
 
 ## 26. API shape
@@ -1239,8 +1344,9 @@ callers acknowledge it explicitly.
 
 Exceptions, set by the language's own conventions: operators whose result
 is the object itself (assignment, compound assignment,
-increment/decrement) and constructors. Immediately-invoked or
-immediately-consumed lambdas need no attribute.
+increment/decrement), constructors, and the `main` entry point whose status is
+consumed by the host. Immediately-invoked or immediately-consumed lambdas need
+no attribute.
 
 Discarding has exactly two spellings, one per concept:
 
@@ -1296,8 +1402,9 @@ A function that fails returns only the failure. On the `unexpected` path
 (or a sender's `set_error` completion) every caller-visible output —
 out-buffers, referenced targets, partially built state — is exactly as
 the caller left it, unless the surface's documentation says otherwise in
-so many words. `write_response` is canonical: the full size is computed
-first, so a short buffer fails before a single byte lands.
+so many words. Prefer to make partial output unrepresentable:
+`write_response` returns either one complete owning string or an error; it has
+no caller buffer to leave half-written.
 
 The mirror rule for narrow-ABI error out-parameters (`err_stage`,
 `err_code`): written on the failure path only; untouched on success.
@@ -1322,7 +1429,7 @@ decisions they drive, lifetime rules the type system cannot see, ABI and
 protocol facts, the "when not to use this." If a concept, contract, type,
 or test can carry the fact, prose may not.
 
-Exactly three comment forms exist:
+Exactly three comment forms exist in C++ source:
 
 1. **The documentation block**, immediately above a declaration:
 
@@ -1355,7 +1462,7 @@ Exactly three comment forms exist:
    justification at each site whose soundness the type system cannot
    see (aliasing, lifetime across an ABI, thread-crossing).
 
-`//` does not exist in this codebase. No file-header essays, no section
+`//` does not exist in C++ source. No file-header essays, no section
 banners, no in-function narration, no `} // namespace` closers, no TODO
 markers. Rationale lives in PINS.md, `docs/`, and commit messages;
 contracts live at the interface in documentation blocks; everything else
@@ -1417,53 +1524,61 @@ Prefer, in order:
 2. fixed-size containers (`std::array`, fixed-capacity structures),
 3. `std::inplace_vector<T, N>` where a bounded capacity is semantically real,
 4. ordinary standard containers when dynamic capacity is semantically needed,
-5. arenas for bulk/stable ownership,
-6. `std::indirect<T>` for value-semantic heap indirection without pointer
+5. `std::indirect<T>` for value-semantic heap indirection without pointer
    identity,
-7. `std::unique_ptr` for truly independent dynamic lifetime.
+6. `std::unique_ptr` for truly independent dynamic lifetime,
+7. arenas for a demonstrated bulk lifetime shared by many objects.
 
 The pinned toolchain implements both `std::inplace_vector` and
 `std::indirect`; they narrow the legitimate uses of `std::unique_ptr`.
 
 Zero-allocation is a property to design and measure in hot paths, not a reason
-to replace safe containers with pointer arithmetic.
+to replace owning values with borrows, safe containers with pointer arithmetic,
+or explicit state with callback machinery.
 
 No hidden shared reference counting.
 
+The skalibs ownership rule translated to C++ is: every heap allocation is
+owned by exactly one RAII value. A plain pointer is never a strong reference
+and is never freed. Project-authored `unsafe/` and `foreign/` code obey this
+rule too; a custom-deleter allocation is placed directly into its unique owner
+at the allocation expression and never exists as a named raw owner.
+
 ### Steady state
 
-A long-running serving loop has two phases, and allocation belongs to the
-first one.
+A long-running serving loop has two phases. Persistent capacity belongs to
+the first one; short-lived owning values may allocate under explicit bounds in
+the second.
 
 - **Setup** (startup, configuration, schema load): standard containers,
   freely. This phase may fail; failing here is cheap and honest.
 - **Steady state** (the request loop): the discipline is reuse and
-  bounds, not abstinence. Buffers are acquired once and reused — clearing
-  is not freeing. Per-request dynamic needs come from per-worker
-  arena-style storage reset between requests. Ad-hoc churn against the
-  global allocator inside the hot loop is a design smell that needs a
-  stated reason.
+  bounds, not abstinence. Long-lived slot and buffer capacity is acquired
+  once. Short-lived owning parse results may allocate within named wire
+  bounds: ownership safety outranks avoiding allocator traffic.
 
 **Unbounded growth in the serving path is a bug.** Under memory
 overcommit, graceful allocation-failure handling is fiction — the failure
 arrives as a kill signal, not as anything the program can observe (§11:
 allocation failure under `-fno-exceptions` is termination). What actually
-protects a daemon is a flat footprint: a process whose steady-state
-memory is a constant fixed at startup cannot leak, cannot fragment its
-way upward, and cannot bloat into the OOM killer's threshold.
+protects a daemon is a bounded live set: setup capacity plus at most the named
+per-operation bounds for each active slot. Allocator high-water behavior may
+vary, but retaining memory without a corresponding bounded live value is a
+leak and a policy violation.
 
 Every wire-facing quantity has a named maximum (`max_request_bytes`,
-`max_header_count`) and buffers are sized from those constants. The bound
+`max_header_count`, `max_connection_count`) and buffers or slot tables are
+sized from those constants. The bound
 is a security property — an unbounded untrusted input is a
 denial-of-service vector — independent of allocation policy. Where a
-compile-time bound exists, format into the caller's buffer
-(`std::format_to_n`, or size-then-write as `write_response` does);
-returning an owning string from a bounded hot path is churn.
+compile-time bound exists, a public codec returns one bounded owning value;
+quarantine may then perform one size-checked copy into its fixed syscall
+buffer. Public parsing and formatting return owning values; zero-copy is not
+an excuse to export a lifetime or aliasing hazard.
 
 Zero allocation at steady state is not a law; bounded allocation is.
-Measure with allocation counts (§30) when a hot path warrants it. An
-arena primitive is added when the first real consumer appears, not
-before.
+Measure with allocation counts (§30) when a hot path warrants it. An arena
+primitive is added when the first real lifetime model requires it, not before.
 
 ---
 
@@ -1521,11 +1636,12 @@ Required CI modes should include:
 - GCC static analysis where useful,
 - clang-tidy over the Clang-readable graph,
 - AddressSanitizer + UndefinedBehaviorSanitizer build,
-- separate ThreadSanitizer build,
 - fuzz/property testing for parsers, codecs, storage boundaries, and protocol
   surfaces where appropriate.
 
-Do not combine ASan and TSan into one configuration.
+Add a separate ThreadSanitizer build when a supported platform graph contains
+project-authored concurrency and the pinned compiler supplies its runtime. Do
+not advertise an empty or unbuildable preset. Never combine ASan and TSan.
 
 ---
 
@@ -1566,8 +1682,9 @@ The rules in this document are enforced by a ladder, strongest layer first:
    `-fno-rtti` remove exceptions and RTTI from the language itself.
 2. **The build graph** rejects what it can: module lists are explicit, header
    units fail dependency scanning, and wrong toolchains fail configure.
-3. **clang-tidy AST checks** enforce the semantic bans over the Clang-readable
-   graph.
+3. **clang-tidy AST checks** find boundary defects over the Clang-readable
+   quarantine graph. A separate dialect profile will enforce semantic bans
+   when Clang can parse that graph.
 4. Everything visible only in raw source text — preprocessor directives, lint
    suppressions, comments, header-like file extensions — is a **review
    convention**, deliberately **not** machine-enforced. There is no repository
@@ -1576,8 +1693,9 @@ The rules in this document are enforced by a ladder, strongest layer first:
 Accepted gap: a named module with reflection partitions is GCC-only as a unit
 and escapes the AST checks until the pinned Clang parses the project's
 reflection syntax; the lint graph covers the Clang-parseable remainder —
-`foreign/`, `unsafe/`, and any non-importing translation units. There,
-enforcement is compiler flags plus review.
+`foreign/`, `unsafe/`, and any non-importing translation units. There, the
+quarantine profile supplements compiler flags and review with boundary-focused
+analysis.
 
 The ladder has a direction. Every rule aspires upward: a review
 convention is a rule still waiting for its mechanism, tolerated only
@@ -1651,6 +1769,14 @@ Before accepting code, ask in order:
     (`is_transient()`), exhaustively (§26)?
 19. Is the serving path's footprint bounded — buffers reused, wire
     quantities capped by named maxima (§29)?
+20. Does every heap allocation enter one RAII owner immediately, including in
+    quarantine code (§29)?
+21. Does every public parser return owned data, and is every remaining view
+    call-scoped or program-lifetime (§12)?
+22. Does kernel readiness return integer-keyed facts to one owner, with no
+    callback, self pointer, address-valued user data, or lifetime proof (§15)?
+23. Does protocol framing have one writer, with no caller-supplied conflicting
+    length, transfer, or connection metadata (§25)?
 
 If a proposed design uses an older mechanism while a blessed mechanism can
 express the same thing, reject it.

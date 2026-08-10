@@ -8,31 +8,57 @@ namespace starter {
  * Incomplete is the torn-buffer signal, not a rejection: the head
  * terminator has not arrived yet, so the caller keeps reading.
  */
-export enum class [[nodiscard]] HttpError : std::uint8_t {
+export enum class HttpErrorKind : std::uint8_t {
 	Incomplete,
 	Malformed,
 	TooManyHeaders,
-	BufferTooSmall,
+	MessageTooLarge,
+	SizeOverflow,
+};
+
+export struct [[nodiscard]] HttpError {
+	HttpErrorKind kind;
+
+	[[nodiscard]] constexpr auto is_transient() const -> bool {
+		switch (kind) {
+		case HttpErrorKind::Incomplete:
+			return true;
+		case HttpErrorKind::Malformed:
+		case HttpErrorKind::TooManyHeaders:
+		case HttpErrorKind::MessageTooLarge:
+		case HttpErrorKind::SizeOverflow:
+			return false;
+		}
+	}
+
+	[[nodiscard]] constexpr auto operator==(HttpError const&) const -> bool = default;
 };
 
 export inline constexpr std::size_t max_header_count = 32;
+export inline constexpr std::size_t max_request_bytes = 8192;
+export inline constexpr std::size_t max_response_bytes = 8192;
 
-export struct HeaderView {
-	std::string_view name;
-	std::string_view value;
+export struct Header {
+	std::string name;
+	std::string value;
 };
 
-/**
- * The parsed request head: views borrowed from the parse input, valid only
- * while that buffer is. Only headers[0 .. header_count) are meaningful.
- */
-export struct RequestView {
-	std::string_view method;
-	std::string_view target;
-	std::string_view version;
-	/* PIN(gcc-partition-bmi-inplace-vector): array + count, not inplace_vector — see PINS.md */
-	std::array<HeaderView, max_header_count> headers;
-	std::size_t header_count;
+/* PIN(gcc-partition-bmi-inplace-vector): vector preserves ownership until GCC can import the bounded member */
+/** The parsed request owns every byte exposed by its fields. */
+export struct Request {
+	std::string method;
+	std::string target;
+	std::string version;
+	std::vector<Header> headers;
+};
+
+/* PIN(gcc-partition-bmi-inplace-vector): same exported-field serializer failure as Request */
+/** A handler result owns every byte that the response writer consumes. */
+export struct Response {
+	std::uint16_t status;
+	std::string reason;
+	std::vector<Header> headers;
+	std::string body;
 };
 
 namespace {
@@ -63,6 +89,26 @@ constexpr std::string_view head_terminator = "\r\n\r\n";
 
 [[nodiscard]] constexpr auto is_field_char(char c) -> bool {
 	return is_vchar(c) || c == ' ' || c == '\t';
+}
+
+[[nodiscard]] constexpr auto ascii_lower(char c) -> char {
+	return c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;
+}
+
+[[nodiscard]] constexpr auto ascii_equal_fold(std::string_view left, std::string_view right) -> bool {
+	if (left.size() != right.size()) {
+		return false;
+	}
+	for (auto index = std::size_t{0}; index < left.size(); ++index) {
+		if (ascii_lower(left[index]) != ascii_lower(right[index])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+[[nodiscard]] constexpr auto is_reserved_response_header(std::string_view name) -> bool {
+	return ascii_equal_fold(name, "Content-Length") || ascii_equal_fold(name, "Transfer-Encoding") || ascii_equal_fold(name, "Connection");
 }
 
 [[nodiscard]] constexpr auto trim_ows(std::string_view text) -> std::string_view {
@@ -100,12 +146,31 @@ constexpr std::string_view head_terminator = "\r\n\r\n";
 	return width;
 }
 
+[[nodiscard]] constexpr auto checked_add(std::size_t left, std::size_t right) -> std::optional<std::size_t> {
+	if (right > std::numeric_limits<std::size_t>::max() - left) {
+		return std::nullopt;
+	}
+	return left + right;
 }
 
-export [[nodiscard]] auto parse_request(std::string_view input) -> std::expected<RequestView, HttpError> {
+[[nodiscard]] auto add_size(std::size_t& total, std::size_t part) -> bool {
+	auto const sum = checked_add(total, part);
+	if (!sum) {
+		return false;
+	}
+	total = *sum;
+	return true;
+}
+
+}
+
+export [[nodiscard]] auto parse_request(std::string_view input) -> std::expected<Request, HttpError> {
+	if (input.size() > max_request_bytes) {
+		return std::unexpected(HttpError{HttpErrorKind::MessageTooLarge});
+	}
 	auto const head_end = input.find(head_terminator);
 	if (head_end == std::string_view::npos) {
-		return std::unexpected(HttpError::Incomplete);
+		return std::unexpected(HttpError{input.size() == max_request_bytes ? HttpErrorKind::MessageTooLarge : HttpErrorKind::Incomplete});
 	}
 
 	auto head = input.substr(0, head_end);
@@ -113,89 +178,100 @@ export [[nodiscard]] auto parse_request(std::string_view input) -> std::expected
 
 	auto const method_end = request_line.find(' ');
 	if (method_end == std::string_view::npos) {
-		return std::unexpected(HttpError::Malformed);
+		return std::unexpected(HttpError{HttpErrorKind::Malformed});
 	}
 	auto const method = request_line.substr(0, method_end);
 
 	auto const rest = request_line.substr(method_end + 1);
 	auto const target_end = rest.find(' ');
 	if (target_end == std::string_view::npos) {
-		return std::unexpected(HttpError::Malformed);
+		return std::unexpected(HttpError{HttpErrorKind::Malformed});
 	}
 	auto const target = rest.substr(0, target_end);
 	auto const version = rest.substr(target_end + 1);
 
 	if (!is_token(method) || target.empty() || !std::ranges::all_of(target, is_vchar) || !is_http_version(version)) {
-		return std::unexpected(HttpError::Malformed);
+		return std::unexpected(HttpError{HttpErrorKind::Malformed});
 	}
 
-	auto request = RequestView{.method = method, .target = target, .version = version, .headers = {}, .header_count = 0};
+	auto request = Request{.method = std::string{method}, .target = std::string{target}, .version = std::string{version}, .headers = {}};
+	request.headers.reserve(max_header_count);
 
 	while (!head.empty()) {
 		auto const line = next_line(head);
 		auto const colon = line.find(':');
 		if (colon == std::string_view::npos) {
-			return std::unexpected(HttpError::Malformed);
+			return std::unexpected(HttpError{HttpErrorKind::Malformed});
 		}
 		auto const name = line.substr(0, colon);
 		auto const value = trim_ows(line.substr(colon + 1));
 		if (!is_token(name) || !std::ranges::all_of(value, is_field_char)) {
-			return std::unexpected(HttpError::Malformed);
+			return std::unexpected(HttpError{HttpErrorKind::Malformed});
 		}
-		if (request.header_count == max_header_count) {
-			return std::unexpected(HttpError::TooManyHeaders);
+		if (request.headers.size() == max_header_count) {
+			return std::unexpected(HttpError{HttpErrorKind::TooManyHeaders});
 		}
-		request.headers[request.header_count] = HeaderView{.name = name, .value = value};
-		++request.header_count;
+		request.headers.push_back(Header{.name = std::string{name}, .value = std::string{value}});
 	}
 
 	return request;
 }
 
-export struct ResponseHead {
-	std::uint16_t status;
-	std::string_view reason;
-};
-
 /**
- * Writes the full response — status line, `headers`, a derived
- * Content-Length, blank line, `body` — into `out` and returns the byte
- * count. The size is computed first, so on failure `out` is untouched.
+ * Returns one owned connection-closing response. Framing is owned here:
+ * callers may not supply Content-Length, Transfer-Encoding, or Connection.
+ * Size arithmetic and the wire bound are checked before allocation.
  */
-export [[nodiscard]] auto write_response(ResponseHead head, std::span<HeaderView const> headers, std::string_view body, std::span<char> out)
-    -> std::expected<std::size_t, HttpError> {
+export [[nodiscard]] auto write_response(Response const& response) -> std::expected<std::string, HttpError> {
 	constexpr std::string_view status_prefix = "HTTP/1.1 ";
+	constexpr std::string_view connection_close = "Connection: close\r\n";
 	constexpr std::string_view length_prefix = "Content-Length: ";
 
-	if (head.status < 100 || head.status > 999 || !std::ranges::all_of(head.reason, is_field_char)) {
-		return std::unexpected(HttpError::Malformed);
+	if (response.status < 100 || response.status > 599 || !std::ranges::all_of(response.reason, is_field_char)) {
+		return std::unexpected(HttpError{HttpErrorKind::Malformed});
 	}
-	for (auto const& header : headers) {
-		if (!is_token(header.name) || !std::ranges::all_of(header.value, is_field_char)) {
-			return std::unexpected(HttpError::Malformed);
+	if (response.headers.size() > max_header_count) {
+		return std::unexpected(HttpError{HttpErrorKind::TooManyHeaders});
+	}
+	for (auto const& header : response.headers) {
+		if (!is_token(header.name) || is_reserved_response_header(header.name) || !std::ranges::all_of(header.value, is_field_char)) {
+			return std::unexpected(HttpError{HttpErrorKind::Malformed});
 		}
 	}
 
-	auto needed = status_prefix.size() + 3 + 1 + head.reason.size() + crlf.size();
-	for (auto const& header : headers) {
-		needed += header.name.size() + 2 + header.value.size() + crlf.size();
+	auto needed = std::size_t{0};
+	if (!add_size(needed, status_prefix.size()) || !add_size(needed, 3) || !add_size(needed, 1) ||
+	    !add_size(needed, response.reason.size()) || !add_size(needed, crlf.size())) {
+		return std::unexpected(HttpError{HttpErrorKind::SizeOverflow});
 	}
-	needed += length_prefix.size() + decimal_width(body.size()) + crlf.size() + crlf.size() + body.size();
-	if (needed > out.size()) {
-		return std::unexpected(HttpError::BufferTooSmall);
+	for (auto const& header : response.headers) {
+		if (!add_size(needed, header.name.size()) || !add_size(needed, 2) || !add_size(needed, header.value.size()) ||
+		    !add_size(needed, crlf.size())) {
+			return std::unexpected(HttpError{HttpErrorKind::SizeOverflow});
+		}
+	}
+	if (!add_size(needed, connection_close.size()) || !add_size(needed, length_prefix.size()) ||
+	    !add_size(needed, decimal_width(response.body.size())) || !add_size(needed, crlf.size()) || !add_size(needed, crlf.size()) ||
+	    !add_size(needed, response.body.size())) {
+		return std::unexpected(HttpError{HttpErrorKind::SizeOverflow});
+	}
+	if (needed > max_response_bytes) {
+		return std::unexpected(HttpError{HttpErrorKind::MessageTooLarge});
 	}
 
-	auto cursor = out.begin();
-	cursor = std::format_to(cursor, "{}{} {}{}", status_prefix, head.status, head.reason, crlf);
-	for (auto const& header : headers) {
+	auto output = std::string(needed, '\0');
+	auto cursor = output.begin();
+	cursor = std::format_to(cursor, "{}{} {}{}", status_prefix, response.status, response.reason, crlf);
+	for (auto const& header : response.headers) {
 		cursor = std::format_to(cursor, "{}: {}{}", header.name, header.value, crlf);
 	}
-	cursor = std::format_to(cursor, "{}{}{}{}", length_prefix, body.size(), crlf, crlf);
-	cursor = std::ranges::copy(body, cursor).out;
+	cursor = std::ranges::copy(connection_close, cursor).out;
+	cursor = std::format_to(cursor, "{}{}{}{}", length_prefix, response.body.size(), crlf, crlf);
+	cursor = std::ranges::copy(response.body, cursor).out;
 
-	auto const written = static_cast<std::size_t>(std::ranges::distance(out.begin(), cursor));
+	auto const written = static_cast<std::size_t>(std::ranges::distance(output.begin(), cursor));
 	contract_assert(written == needed);
-	return written;
+	return output;
 }
 
 }
