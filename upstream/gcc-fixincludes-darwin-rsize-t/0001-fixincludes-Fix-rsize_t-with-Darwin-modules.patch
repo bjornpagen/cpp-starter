@@ -1,17 +1,16 @@
-From 9f4a16ae995e455e7d7544a31cee1b5ed5c41986 Mon Sep 17 00:00:00 2001
+From ee0dd671d05ea814e655338d31f32bc050a6e26a Mon Sep 17 00:00:00 2001
 From: Bjorn Pagen <bjorn.pagen@alpha.school>
 Date: Sun, 9 Aug 2026 10:54:17 -0500
 Subject: [PATCH] fixincludes: Fix rsize_t with Darwin modules
 
-The Darwin SDK header <sys/_types/_rsize_t.h> selects a
-Clang-specific branch when __has_feature(modules) is true.  GCC also
-reports that feature with -fmodules, but GCC stddef.h does not implement
-the __need_rsize_t protocol used by that branch.  Consequently rsize_t
-is not defined and declarations in the SDK fail to parse.
+The Darwin SDK selects a Clang-specific branch when
+__has_feature(modules) is true.  GCC also reports this feature with
+-fmodules.  GCC stddef.h does not support the __need_rsize_t protocol.
+The SDK therefore leaves rsize_t undefined.  SDK declarations then
+fail to parse.
 
-Use fixincludes to make the existing guard require __clang__.  GCC and
-other non-Clang compilers then use the SDK plain-typedef branch, while
-Clang behavior is unchanged.
+Make the SDK guard require __clang__.  GCC then uses the SDK typedef
+branch.  This change does not change Clang behavior.
 
 fixincludes/ChangeLog:
 
