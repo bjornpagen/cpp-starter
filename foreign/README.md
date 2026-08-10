@@ -15,7 +15,7 @@ Current residents:
   operations cross an `extern "C++"` boundary. No other file may include a
   stdexec header or spell `stdexec::`/`exec::`.
 
-The maintained stdexec fork is pinned to an immutable revision in the top-level
+NVIDIA stdexec is pinned to an immutable upstream revision in the top-level
 CMake file. The `PINS.md` toolchain-bump ritual requires checking for native
 senders, then deleting the vendor and rebinding this one boundary to
 `std::execution` as soon as they are available.

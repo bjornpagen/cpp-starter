@@ -116,12 +116,12 @@ target_compile_options(starter_language_profile INTERFACE
 
 # PIN(gcc-gmf-stdexec-ice): stdexec backs the one foreign swap boundary
 # until libstdc++ ships __cpp_lib_senders — see PINS.md. The header-only
-# fork is pinned immutably and is also present in the lint graph so the
-# Clang-readable foreign boundary is genuinely checked.
+# upstream dependency is pinned immutably and is also present in the lint graph
+# so the Clang-readable foreign boundary is genuinely checked.
 include(FetchContent)
 FetchContent_Declare(stdexec
-	GIT_REPOSITORY https://github.com/bjornpagen/stdexec.git
-	GIT_TAG 0d8cfba62800bbe6604c3325ec29291e256614d8
+	GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
+	GIT_TAG 19c454dca710cae39f18d11021ca0be4a8035c4a
 	SOURCE_SUBDIR include
 )
 FetchContent_MakeAvailable(stdexec)

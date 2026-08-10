@@ -28,29 +28,19 @@ top-level CMake dependency declaration.
 
 ## stdexec-tooling-carveouts
 
-- symptoms, all confined to pinned stdexec internals:
-  - Clang's stack-escape analyzer diagnoses intentional operation-state
-    self-references as addresses of temporaries, while
-    `performance-move-const-arg` asks generic sender code to stop expressing a
-    semantically required move;
-  - UBSan's `null`, `nonnull-attribute`, and `returns-nonnull-attribute`
-    instrumentation prevents stdexec's consteval completion-signature
-    machinery from compiling;
-  - GCC's optimized ASan/UBSan build diagnoses a null dereference in stdexec's
-    intrusive-queue splice even though the ordinary optimized build accepts
-    the same code with `-Wnull-dereference` and the queue is vendor-owned.
-- sites: `foreign/CMakeLists.txt` — every carve-out is scoped to
-  `starter_exec_backend` (and the warning override to its one source); the
-  analyzer, sanitizer, and warning remain enabled everywhere else
+- symptoms, both confined to pinned stdexec internals: Clang's stack-escape
+  analyzer diagnoses intentional operation-state self-references as addresses
+  of temporaries, while `performance-move-const-arg` asks generic sender code
+  to stop expressing a semantically required move
+- sites: `foreign/CMakeLists.txt` — both exclusions are scoped to
+  `starter_exec_backend`; the checks remain enabled everywhere else
 - workaround: preserve the sender lifetime/move protocol and disable only the
-  named diagnostics or instrumentation sub-checks on the one vendor boundary;
-  the GCC warning exception applies only to the `RelWithDebInfo` sanitizer
-  personality
+  two named diagnostics on the one vendor boundary
 - retire: re-enable each item independently when a pinned Clang or stdexec bump
   compiles and analyzes this boundary without it
 - upstream: none filed; these are interactions inside the pinned vendor
   expression implementation. The exported combinator behavior remains covered
-  by the GCC tests, the rest of UBSan/ASan, and the Clang boundary graph.
+  by the GCC tests, UBSan/ASan, and the Clang boundary graph.
 
 ## gcc-partition-bmi-inplace-vector
 
