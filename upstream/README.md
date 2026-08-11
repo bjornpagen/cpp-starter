@@ -2,6 +2,8 @@
 
 File three new Bugzilla reports. Send one GCC patch after Bugzilla creates the first report.
 
+Four further entries are staged. Each is blocked on a Linux cross-check; see [Staged entries](#staged-entries-blocked-on-the-linux-check).
+
 DCO means Developer Certificate of Origin. ICE means internal compiler error. GMF means global module fragment.
 
 ## Before you start
@@ -87,6 +89,20 @@ Open [`gcc-fixincludes-darwin-rsize-t/APPLE-FEEDBACK.md`](gcc-fixincludes-darwin
 | `gcc-ice-gmf-consteval-redecl` | File one `c++` report. | Ready |
 | `libstdcxx-silent-empty-std-module` | File one `libstdc++` report. | Ready after the Darwin PR |
 | `bugzilla-comments` | Add comments to two existing reports. | Ready |
+| `gcc-lto-modules-debug-oom` | File one `debug` report (triage may move it to `target`). File one Apple Feedback after. | Blocked on the Linux check |
+| `gcc-darwin-fhardened-coverage` | File one `middle-end` report. Send one `configure.ac` patch after. | Blocked on the Linux check |
+| `gcc-analyzer-call-summary-ice` | File one `analyzer` report. | Blocked on the Linux check |
+| `gcc-analyzer-fd-leak-raii-fp` | File two `analyzer` reports. | Blocked on the Linux check |
+| `gcc-modules-freflection-typedef-merge` | File one `c++` report. | Ready |
+
+## Staged entries (blocked on the Linux check)
+
+Do not file these four before the Linux cross-check that each entry's `README.md` describes.
+
+- [`gcc-lto-modules-debug-oom`](gcc-lto-modules-debug-oom/README.md) — `-flto -g` emits invalid `__DWARF` sections on Darwin; the driver-run `dsymutil` then grows without bound. The Linux `-ffat-lto-objects -g` check decides component `debug` versus `target`. DANGER: run the reproduction only under the entry's memory guard.
+- [`gcc-darwin-fhardened-coverage`](gcc-darwin-fhardened-coverage/README.md) — `-fhardened` unsupported-target warning has no warning class, and the umbrella half-applies silently. Linux is the control that the umbrella applies fully there. A `configure.ac` Darwin-enablement patch follows the report.
+- [`gcc-analyzer-call-summary-ice`](gcc-analyzer-call-summary-ice/README.md) — ICE in `call_summary_replay::convert_region_from_summary` on summarized callees that return by invisible reference.
+- [`gcc-analyzer-fd-leak-raii-fp`](gcc-analyzer-fd-leak-raii-fp/README.md) — two independent `-Wanalyzer-fd-leak` false-positive defects on RAII fd owners (pointer/reference-parameter state purge; assumed-throwing libc calls).
 
 ## Verified patch status
 

@@ -4,6 +4,12 @@ if(NOT CMAKE_GENERATOR STREQUAL "Ninja")
 	message(FATAL_ERROR "Ninja is the only supported generator (got ${CMAKE_GENERATOR})")
 endif()
 
+# On a fresh configure CMAKE_MAKE_PROGRAM is unset until project(); resolve it
+# here so the version gate below works on first run, not only on reconfigure.
+if(NOT CMAKE_MAKE_PROGRAM)
+	find_program(CMAKE_MAKE_PROGRAM ninja REQUIRED)
+endif()
+
 # Toolchain validation is the documented build-system reason for this probe;
 # source configuration never depends on incidental host state.
 execute_process(
@@ -75,9 +81,21 @@ set(CMAKE_CXX_MODULE_STD ON)
 
 # Module-ABI flags must be global: CMake's synthesized import-std targets see
 # only CMAKE_CXX_FLAGS, and the std module BMI must match every importer.
-string(APPEND CMAKE_CXX_FLAGS " -fno-exceptions -fno-rtti")
+# _GLIBCXX_ASSERTIONS is in the same class: the macro expands when the std
+# BMI is built, so a per-target define would be silently inert.
+string(APPEND CMAKE_CXX_FLAGS " -fno-exceptions -fno-rtti -D_GLIBCXX_ASSERTIONS")
 
 if(NOT STARTER_LINT_GRAPH)
+	# Whole-program optimization is Release-only: a Debug (-O0 -g) LTO link
+	# of this module graph grows lto1 memory without bound on the pinned
+	# toolchain — see the upstream/ entry. Unsupported IPO is a configure
+	# failure, never a silent degrade. The check must precede the
+	# -freflection append below: its probe TU compiles without the project
+	# -std=gnu++26, and -freflection is rejected outside C++26.
+	include(CheckIPOSupported)
+	check_ipo_supported(LANGUAGES CXX)
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+
 	# -freflection is required for the std module to export std::meta at all.
 	string(APPEND CMAKE_CXX_FLAGS " -freflection")
 endif()
@@ -91,13 +109,27 @@ if(NOT STARTER_LINT_GRAPH)
 	# consumer's object files — see PINS.md
 	target_link_libraries(starter_language_profile INTERFACE stdc++exp)
 
+	# Release undefined-behavior checking is trap-mode only: production
+	# binaries must never link a sanitizer runtime. The sanitizer pair must
+	# also be on the link line: LTO defers codegen to the ltrans phase, which
+	# otherwise emits runtime calls instead of traps.
 	target_compile_options(starter_language_profile INTERFACE
-		"$<$<CONFIG:Release>:-ffunction-sections;-fdata-sections>"
+		"$<$<CONFIG:Release>:-ffunction-sections;-fdata-sections;-fsanitize=undefined;-fsanitize-trap=all>"
 	)
 	target_link_options(starter_language_profile INTERFACE
-		"$<$<CONFIG:Release>:LINKER:-dead_strip>"
+		"$<$<CONFIG:Release>:LINKER:-dead_strip;-fsanitize=undefined;-fsanitize-trap=all>"
 	)
 endif()
+
+# Hardened codegen is unconditional in every configuration and both graphs.
+# Stack-clash probing is GNU-scoped only because the lint Clang rejects the
+# flag as unused on this target.
+target_compile_options(starter_language_profile INTERFACE
+	-ftrivial-auto-var-init=zero
+	-fstack-protector-strong
+	-fzero-call-used-regs=used-gpr
+	"$<$<CXX_COMPILER_ID:GNU>:-fstack-clash-protection>"
+)
 
 target_compile_options(starter_language_profile INTERFACE
 	-Werror

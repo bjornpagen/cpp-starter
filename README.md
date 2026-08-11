@@ -69,6 +69,33 @@ A ThreadSanitizer preset is intentionally absent: the supported server graph
 is single-threaded and the pinned macOS GCC has no usable arm64 TSan runtime.
 The policy forbids advertising an empty or unbuildable check.
 
+The release graph is whole-program-optimized and the whole production graph
+is hardened by default; none of it is configurable. Every configuration
+builds with `_GLIBCXX_ASSERTIONS`, `-ftrivial-auto-var-init=zero`,
+`-fstack-protector-strong`, `-fstack-clash-protection` (GCC graph only; the
+lint Clang rejects the flag on this target), and
+`-fzero-call-used-regs=used-gpr`. The `release` preset additionally links
+with GCC LTO and compiles with trap-mode UBSan (`-fsanitize=undefined
+-fsanitize-trap=all`), which needs no runtime library. LTO applies to the
+`release` preset only: a `-flto -g` link has unbounded memory growth on the
+pinned toolchain (`upstream/gcc-lto-modules-debug-oom/`; registry entry
+`gcc-darwin-lto-debug-dsymutil` in `PINS.md`).
+
+Deliberately absent, under the same no-empty-check policy:
+
+- `-D_FORTIFY_SOURCE=3`: Apple's SDK excludes every C++ translation unit
+  from the fortify wrappers, so the flag is byte-for-byte inert here.
+- `-mbranch-protection=standard`: PAC/BTI execute as NOPs in plain-arm64
+  Darwin processes, conferring zero mitigation.
+- `-fhardened`: not supported on this target — it errors under `-Werror`
+  with no classifiable warning and silently drops most constituents; the
+  working constituents are forced explicitly above (registry entry
+  `gcc-darwin-fhardened` in `PINS.md`;
+  `upstream/gcc-darwin-fhardened-coverage/`).
+- `-fanalyzer`: it bails out on exactly the reactor code it would need to
+  analyze, so its silence is not a check (its two defects found while
+  probing are packaged under `upstream/`).
+
 ## Layout
 
 ```text

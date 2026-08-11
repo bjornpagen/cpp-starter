@@ -157,3 +157,68 @@ top-level CMake dependency declaration.
   applies clean to trunk; final paired regression comparison in progress) and
   `upstream/libstdcxx-silent-empty-std-module/` (Bugzilla report, status
   SEND; corroboration Homebrew/homebrew-core#289142)
+
+## gcc-darwin-lto-debug-dsymutil
+
+- symptom: any `-flto -g` link on the pinned Darwin toolchain emits objects
+  with invalid `__DWARF` sections (dangling DIE references, out-of-bounds
+  `DW_AT_stmt_list`); archive members bypass the plugin-less LTO recompile,
+  and the driver-run Apple dsymutil then grows without bound on the debug
+  map (67 GB RSS in 13 s; one unguarded run kernel-panicked the host)
+- sites: CMakeLists.txt — `check_ipo_supported` plus
+  `CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON`: whole-program
+  optimization is Release-only, and Release carries no `-g`, so no
+  configuration links LTO objects while dsymutil runs
+- workaround: never combine `-flto` with `-g` on this target; unsupported
+  IPO is a configure failure, not a silent degrade
+- retire: when the pinned GCC emits `__DWARF` sections that pass
+  `dwarfdump --verify` under `-flto -g` (re-test the minimal repro in the
+  upstream entry on every toolchain bump), and dsymutil survives the full
+  dev-preset IPO link under a memory guard
+- upstream: `upstream/gcc-lto-modules-debug-oom/` — 4-file guarded repro,
+  trigger matrix, and growth-curve evidence; the Linux control is done
+  (ELF fat LTO objects verify clean, so the corruption is Mach-O-only —
+  file against the Darwin target side), then a follow-up Apple Feedback
+  for dsymutil's unbounded warning loop
+
+## gcc-darwin-fhardened
+
+- symptom: `-fhardened` on aarch64-apple-darwin24 warns `'-fhardened' not
+  supported for this target` with warning class 0 — under the profile's
+  `-Werror` this is a hard error that `-Wno-hardened` and
+  `-Wno-error=hardened` cannot demote — and the umbrella half-applies
+  anyway (stack-protector-strong and trivial-auto-var-init=zero engage;
+  stack-clash, `_FORTIFY_SOURCE`, and `_GLIBCXX_ASSERTIONS` are silently
+  dropped with no `-Whardened` report)
+- sites: CMakeLists.txt — the "Hardened codegen is unconditional" block on
+  `starter_language_profile`
+- workaround: never spell `-fhardened`; enable the working constituents
+  individually (`-ftrivial-auto-var-init=zero`, `-fstack-protector-strong`,
+  `-fzero-call-used-regs=used-gpr`, GNU-scoped `-fstack-clash-protection`)
+- retire: replace the individual flags with `-fhardened` when the pinned GCC
+  both classifies the unsupported-target warning under `-Whardened` and
+  enables the umbrella (or accurate per-constituent reporting) on Darwin;
+  re-test the `-E -dM` macro set on every toolchain bump
+- upstream: `upstream/gcc-darwin-fhardened-coverage/` — one-line repro,
+  constituent evidence, triage of configure.ac:7982 / toplev.cc:1642 /
+  opts.cc / c-opts.cc:1747 verified; status: hold for the Linux control
+  check, then Bugzilla `middle-end` plus a configure.ac Darwin-enablement
+  patch to gcc-patches
+
+## cmake-ipo-probe-ordering
+
+- symptom: CMake's `check_ipo_supported` probe project inherits
+  `CMAKE_CXX_FLAGS` but not `CMAKE_CXX_STANDARD`, and the pinned cc1plus
+  rejects `-freflection` outside `-std=c++26`/`-std=gnu++26` — so an IPO
+  check placed after the `-freflection` append reports the toolchain
+  unsupported and the configure gate FATAL_ERRORs on a working compiler
+- sites: CMakeLists.txt — `check_ipo_supported(LANGUAGES CXX)` deliberately
+  precedes the `-freflection` `CMAKE_CXX_FLAGS` append (the in-tree comment
+  states the constraint)
+- workaround: keep the IPO probe ahead of every flag that is valid only at
+  the project's language-standard level
+- retire: when the pinned CMake's IPO probe honors `CMAKE_CXX_STANDARD` (or
+  the pinned GCC accepts `-freflection` at any standard level); re-test by
+  reordering the probe on every CMake or GCC bump
+- upstream: none filed — documented CMake probe semantics interacting with a
+  standard-gated GCC flag; no reduction produced
