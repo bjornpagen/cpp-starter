@@ -1,28 +1,40 @@
-# Analyzer call-summary replay ICEs on callees that return through a hidden reference
+# The analyzer call-summary replay causes an ICE on callees that return through a hidden reference
 
-Status: analysis complete, reproduction verified under guard, root cause traced to source. Check Linux before filing (a Linux run is being arranged separately).
+Status:
 
-The ICE is instantaneous and allocates nothing unusual; every compile below was still run under the standard watchdog (`/tmp/buildguard.sh 8192 12288 600 ...`, one compile at a time). The guard never fired.
+- The analysis is complete.
+- The reproduction is verified under guard.
+- The root cause is traced to source.
+- The Linux check is complete. The 21-line reduction causes the same ICE on Linux (see the section "Linux check (done)"). The report is ready to file.
 
-The original repro material was lost with `/tmp`; this directory rebuilds it from the recorded recipe and reduces it further. The reduction shows two claims in the historical note were incidental: the receiver-struct-with-reference-member indirection is not needed (a plain reference parameter suffices), and the ICE is `-O2`-only, not `-O1+`.
+The ICE is immediate and allocates nothing unusual. But we still ran every compile below under the standard watchdog (`/tmp/buildguard.sh 8192 12288 600 ...`), one compile at a time. The guard never fired.
+
+The original repro material was lost together with `/tmp`. This directory rebuilds the material from the recorded recipe and reduces it further. The reduction shows that two claims in the historical note were incidental:
+
+- The receiver-struct-with-reference-member indirection is not necessary. A plain reference parameter is sufficient.
+- The ICE occurs only at `-O2`, not at `-O1+`.
 
 ## Symptom
 
-`g++-16 -O2 -fanalyzer -fanalyzer-call-summaries` crashes with an internal compiler error while replaying a call summary, at the `types_compatible_p` assertion in `call_summary_replay::convert_region_from_summary` (`gcc/analyzer/call-summary.cc:550`). The trigger is a summarized callee that returns a class by hidden reference (return slot optimization): the summary's `RESULT_DECL` region is reference-typed, the caller-side region it is mapped to is the value-typed return slot, and the two types are not compatible.
+`g++-16 -O2 -fanalyzer -fanalyzer-call-summaries` crashes with an internal compiler error when it replays a call summary. The crash occurs at the `types_compatible_p` assertion in `call_summary_replay::convert_region_from_summary` (`gcc/analyzer/call-summary.cc:550`). The trigger is a summarized callee that returns a class by hidden reference (return slot optimization). In that condition:
 
-The code being analyzed is valid; the crash is analyzer-internal state, not a diagnosis. Originally hit while running the analyzer over `foreign/exec.backend.cc` (stdexec), which ICEs the same way; `repro.cc` reproduces it from `<tuple>`/`<variant>` alone, and `repro-standalone.cc` reproduces it with no library headers at all.
+- The summary's `RESULT_DECL` region has a reference type.
+- The replay maps that region to the caller-side return slot, which has a value type.
+- The two types are not compatible.
+
+The analyzed code is valid. The crash comes from analyzer-internal state; it is not a diagnosis. We first hit the crash in an analyzer run over `foreign/exec.backend.cc` (stdexec), which crashes with the same ICE. `repro.cc` reproduces the ICE from `<tuple>` and `<variant>` alone. `repro-standalone.cc` reproduces the ICE with no library headers.
 
 ## Environment
 
 - GCC 16.1.0, self-built, `/Users/bjorn/.gcc/current`, target `aarch64-apple-darwin24`
 - macOS arm64 (Darwin 24.6.0), Apple Silicon, 96 GB RAM
 - CMake 4.2.1, Ninja 1.13.2 (not used by this reproduction; single-TU compiles only)
-- Current GCC master still contains the identical assert and the identical unreconciled `RESULT_DECL` replay path (read from the gcc-mirror source on 2026-08-11; trunk was not run locally)
+- Current GCC master contains the identical assert and the identical unreconciled `RESULT_DECL` replay path. We read this from the gcc-mirror source on 2026-08-11. We did not run trunk locally.
 
 ## Files
 
-- `repro.cc` — 18-line primary reproduction: `std::tuple<int>` extracted from a `std::variant` alternative by a helper, called from two call sites; needs only the two analyzer flags
-- `repro-standalone.cc` — 21-line library-free reduction: any class with a user-provided copy constructor; needs one extra `--param` to force summarization of the tiny callee
+- `repro.cc` — the 18-line primary reproduction. A helper extracts `std::tuple<int>` from a `std::variant` alternative. Two call sites call the helper. The reproduction needs only the two analyzer flags.
+- `repro-standalone.cc` — the 21-line library-free reduction. Any class with a user-provided copy constructor is sufficient. The reduction needs one extra `--param` to force summarization of the small callee.
 
 ## Reproduction (verified under guard)
 
@@ -43,7 +55,7 @@ repro.cc:9:19: internal compiler error: in convert_region_from_summary, at analy
       |               ~~~~^~~
 ```
 
-Library-free form (the callee is too small for the default summarization threshold, so lower it):
+Library-free form. The callee is smaller than the default summarization threshold, so the command lowers the threshold:
 
 ```sh
 g++-16 -O2 -std=c++17 -fanalyzer -fanalyzer-call-summaries \
@@ -59,11 +71,11 @@ repro-standalone.cc:12:19: internal compiler error: in convert_region_from_summa
       |               ~~~~^~~
 ```
 
-Expected result: the analyzer finishes and the compile exits 0 with no diagnostic, as it does with `-fanalyzer` alone on the same files.
+Expected result: the analyzer completes, and the compile exits 0 with no diagnostic. This is the result with `-fanalyzer` alone on the same files.
 
 ## Trigger matrix (each cell verified under guard)
 
-Standard version is irrelevant: `repro.cc` ICEs identically at `-std=c++17/20/23/26`, each across the full `-O` matrix below.
+The standard version is not relevant. `repro.cc` crashes with the identical ICE at `-std=c++17/20/23/26`. We verified each standard version across the full `-O` matrix below.
 
 | Variation | Result |
 |---|---|
@@ -78,17 +90,27 @@ Standard version is irrelevant: `repro.cc` ICEs identically at `-std=c++17/20/23
 | no `std::variant`, `noinline` callee, default params | compiles (callee below `analyzer-min-snodes-for-call-summary`, so never summarized) |
 | no `std::variant`, `noinline` callee, `--param analyzer-min-snodes-for-call-summary=0` | ICE |
 
-Necessary combination: a callee that (a) returns a class by hidden reference (non-trivially-copyable return type, so the call uses return slot optimization), (b) is actually summarized (`-fanalyzer-call-summaries`, at least `analyzer-min-snodes-for-call-summary` supernodes — `std::get` on a variant supplies the mass via the `bad_variant_access` throw path), and (c) has more than one call site as the analyzer sees the IL, so a summary gets replayed. `-O2` is what produces exactly that shape here: early inlining folds `run` into both callers, leaving two direct return-slot calls to `take`; at `-O1` `run` stays out of line so `take` has a single call site, and at `-O3` `take` is inlined away entirely.
+The ICE needs this combination:
+
+1. The callee returns a class by hidden reference. The return type is not trivially copyable, so the call uses return slot optimization.
+2. The analyzer summarizes the callee. This needs `-fanalyzer-call-summaries` and at least `analyzer-min-snodes-for-call-summary` supernodes. `std::get` on a variant supplies the necessary supernodes through the `bad_variant_access` throw path.
+3. The callee has more than one call site in the IL that the analyzer sees. Then the analyzer replays a summary.
+
+`-O2` produces exactly that shape here:
+
+- At `-O2`, early inlining folds `run` into both callers. This leaves two direct return-slot calls to `take`.
+- At `-O1`, `run` stays out of line, so `take` has a single call site.
+- At `-O3`, the compiler inlines `take` away entirely.
 
 ## Analysis
 
-The analyzer's emergency dump at the point of the ICE shows the caller's IL (`-fdump-ipa-analyzer`, file `repro.cc.084i.analyzer`):
+At the point of the ICE, the analyzer's emergency dump shows the caller's IL (`-fdump-ipa-analyzer`, file `repro.cc.084i.analyzer`):
 
 ```text
 D.20773 = take (v_3(D)); [return slot optimization]
 ```
 
-and the callee returns through the hidden slot — its `RESULT_DECL` is `DECL_BY_REFERENCE`, appearing in GIMPLE as a reference-typed SSA name:
+The callee returns through the hidden slot. Its `RESULT_DECL` is `DECL_BY_REFERENCE` and appears in GIMPLE as a reference-typed SSA name:
 
 ```text
 struct tuple take (struct variant & v)
@@ -100,14 +122,20 @@ struct tuple take (struct variant & v)
 }
 ```
 
-During replay of `take`'s summary at the `caller1` call site, the summary's stores through `*_3(D)` require converting the initial value of the `RESULT_DECL` region (the hidden slot pointer). `call_summary_replay::convert_svalue_from_summary_1` (`SK_INITIAL` case, call-summary.cc:273) converts that svalue's region; `convert_region_from_summary_1` handles it here (call-summary.cc:632):
+The analyzer replays `take`'s summary at the `caller1` call site. The summary's stores through `*_3(D)` make the replay convert the initial value of the `RESULT_DECL` region (the hidden slot pointer). `call_summary_replay::convert_svalue_from_summary_1` (`SK_INITIAL` case, call-summary.cc:273) converts that svalue's region. `convert_region_from_summary_1` handles the region here (call-summary.cc:632):
 
 ```c
 case RESULT_DECL:
   return m_cd.get_lhs_region ();
 ```
 
-This is the only conversion path in the function that performs no type reconciliation — every other case reuses the region, passes the summary region's type into the new region, or wraps the result in `get_cast_region`. It equates the summary's `RESULT_DECL` region (type `std::tuple<int>&`, because the decl is `DECL_BY_REFERENCE`) with the caller's value-typed return slot `D.20773` (type `std::tuple<int>`). The wrapper's consistency assertion then fires:
+This is the only conversion path in the function that does no type reconciliation. Every other case does one of these:
+
+- It reuses the region.
+- It passes the summary region's type into the new region.
+- It wraps the result in `get_cast_region`.
+
+This path equates the summary's `RESULT_DECL` region with the caller's value-typed return slot `D.20773`. The summary region has type `std::tuple<int>&`, because the decl is `DECL_BY_REFERENCE`. The return slot has type `std::tuple<int>`. The wrapper's consistency assertion then fires:
 
 ```c
 if (caller_reg)
@@ -116,26 +144,30 @@ if (caller_reg)
                                     caller_reg->get_type ()));   /* <- line 550 */
 ```
 
-The assertion is correctly reporting a real modeling error, not a stale invariant: for a by-reference `RESULT_DECL`, the initial value of the decl region is the *address of* the caller's LHS region, so replaying it as the LHS region itself would keep being wrong even with the assert deleted (the slot's contents would be used where its address is meant). The `SK_INITIAL` machinery comments that "Params should already be in the cache, courtesy of the ctor" — the replay constructor pre-maps `PARM_DECL` initial values to the actual arguments, but a `DECL_BY_REFERENCE` `RESULT_DECL` is a hidden parameter that is not a `PARM_DECL`, so it misses that cache and falls into the mismatched decl-region path. A plausible fix is to special-case by-reference `RESULT_DECL`s in the `RK_DECL`/`SK_INITIAL` replay paths, mapping the initial pointer value to `&lhs_region` (a `region_svalue` for `get_lhs_region ()`).
+The assertion reports a real modeling error; it is not a stale invariant. For a by-reference `RESULT_DECL`, the initial value of the decl region is the *address of* the caller's LHS region. Thus a replay of that value as the LHS region itself stays wrong even with the assert deleted. The analyzer would use the slot's contents where the code means the slot's address. The `SK_INITIAL` machinery has this comment: "Params should already be in the cache, courtesy of the ctor". The replay constructor pre-maps `PARM_DECL` initial values to the actual arguments. But a `DECL_BY_REFERENCE` `RESULT_DECL` is a hidden parameter that is not a `PARM_DECL`. Thus it misses that cache and falls into the mismatched decl-region path. A plausible fix is to special-case by-reference `RESULT_DECL`s in the `RK_DECL`/`SK_INITIAL` replay paths. The fix maps the initial pointer value to `&lhs_region` (a `region_svalue` for `get_lhs_region ()`).
 
-`take` never gets past `convert_region_from_summary`'s cache warm-up, so the failure is deterministic and immediate; nothing about the crash is Darwin-specific on its face, but only the Darwin build was run.
+`take` never gets past the cache warm-up in `convert_region_from_summary`. Thus the failure is deterministic and immediate. No part of the crash looks Darwin-specific on its face. But at that point, we ran only the Darwin build.
 
 ## Suggested upstream destination
 
-GCC Bugzilla, product `gcc`, component `analyzer`, version `16.1.0`, keywords `ice-on-valid-code`. Title suggestion: `[analyzer] ICE in call_summary_replay::convert_region_from_summary on call summaries for functions returning by invisible reference`. Attach `repro.cc` (primary, flags only) and `repro-standalone.cc` (library-free, needs the `--param`); both bodies are small enough to inline in the report. State that the assert and the unreconciled `RESULT_DECL` path are unchanged on current master.
+File in GCC Bugzilla:
 
-Duplicate check: Bugzilla and web searches for `convert_region_from_summary` (during the original probe and again on 2026-08-11) found no existing report naming this function or this assert.
+- Product: `gcc`
+- Component: `analyzer`
+- Version: `16.1.0`
+- Keywords: `ice-on-valid-code`
+- Title suggestion: `[analyzer] ICE in call_summary_replay::convert_region_from_summary on call summaries for functions returning by invisible reference`
 
-Before filing: rerun both commands on Linux to confirm the crash is target-independent, as expected from the code path (a Linux run is being arranged separately).
+Attach `repro.cc` (primary, flags only). Attach `repro-standalone.cc` (library-free, needs the `--param`). Both bodies are small enough to include inline in the report. State that the assert and the unreconciled `RESULT_DECL` path are unchanged on current master.
+
+Duplicate check: we searched Bugzilla and the web for `convert_region_from_summary`, during the original probe and again on 2026-08-11. The searches found no existing report that names this function or this assert.
+
+The Linux run is complete and confirms the prediction: the crash is target-independent. See the section "Linux check (done)" below for the exact result on both files.
 
 ## Linux check (done)
 
-Not Darwin-specific. The 21-line `repro-standalone.cc` reduction ICEs identically on
-aarch64-unknown-linux-gnu (same self-built GCC 16.1.0, Debian trixie): cc1plus crashes
-with the analyzer backtrace through `engine.cc` under the exact documented command. The
-larger `repro.cc` compiles clean on Linux at the same flags — mention both facts in the
-report; the reduction is the cross-platform testcase.
+The crash is not Darwin-specific. The 21-line `repro-standalone.cc` reduction crashes with the identical ICE on aarch64-unknown-linux-gnu (same self-built GCC 16.1.0, Debian trixie). Under the exact documented command, cc1plus crashes with the analyzer backtrace through `engine.cc`. The larger `repro.cc` compiles clean on Linux at the same flags. Include both facts in the report. The reduction is the cross-platform testcase.
 
 ## Local workaround
 
-None needed. No build configuration in this repository enables `-fanalyzer-call-summaries`; the blocker arose in an exploratory analyzer run over `foreign/exec.backend.cc`. No `PINS.md` entry.
+No workaround is necessary. No build configuration in this repository enables `-fanalyzer-call-summaries`. The blocker occurred in an exploratory analyzer run over `foreign/exec.backend.cc`. There is no `PINS.md` entry.

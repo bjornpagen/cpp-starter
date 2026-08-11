@@ -154,11 +154,13 @@ top-level CMake dependency declaration.
 - retire: when the fixincludes patch lands in the pinned GCC (and the
   silent-empty-fallback report is resolved, so a failed std-module build
   can no longer masquerade as success)
-- upstream: both filed 2026-08-10 (fixincludes patch + Bugzilla target
-  report; separate libstdc++ report for the silent empty-module fallback,
-  corroboration Homebrew/homebrew-core#289142). The submission material was
-  removed from the tree after filing; the live fixinclude survives as
-  `upstream/gcc-fixincludes-darwin-rsize-t/fixed-header.h`
+- upstream: filed 2026-08-10 as PR target/126782 (See Also PR 116827); a
+  separate libstdc++ report covers the silent empty-module fallback
+  (corroboration Homebrew/homebrew-core#289142). Maintainer feedback on the
+  PR rejects the fixincludes approach for Darwin; the replacement patch adds
+  `__need_rsize_t` support to GCC's `<stddef.h>` — plan and superseded patch
+  in `upstream/gcc-fixincludes-darwin-rsize-t/`. The live local fixinclude
+  remains `fixed-header.h` in that directory until the upstream fix lands
 
 ## gcc-darwin-lto-debug-dsymutil
 

@@ -1,21 +1,21 @@
-# Darwin `-flto -g` objects carry invalid DWARF and send dsymutil into unbounded growth
+# Darwin `-flto -g` objects contain invalid DWARF and cause `dsymutil` to grow without limit
 
-Status: analysis complete, reproduction verified under guard. Check Linux before filing (a Linux run is being arranged separately).
+Status: the analysis is complete. We verified the reproduction under the guard. The Linux check is also complete: the defect is Mach-O-only (see the section "Linux control (answered)"). The report is ready to file.
 
-DO NOT run this reproduction unguarded. The full-project form grew one `dsymutil` process to 67 GB of RSS in 13 seconds on a 96 GB machine. An earlier unguarded run consumed about 500 GB of swap in 13 minutes and kernel-panicked the host. Cap memory and wall time, and kill `dsymutil` yourself: the compiler driver runs it as a `collect2` grandchild, so killing the driver orphans it and it keeps growing.
+DO NOT run this reproduction without the guard. The full-project form grew one `dsymutil` process to 67 GB of RSS in 13 seconds on a 96 GB machine. An earlier run without the guard used approximately 500 GB of swap in 13 minutes and caused a kernel panic on the host. Set limits on memory and on wall time. Kill `dsymutil` yourself: the compiler driver runs it as a grandchild of `collect2`. If you kill only the driver, `dsymutil` becomes an orphan and continues to grow.
 
-The historical entry name says `lto1`. The measured runaway process is Apple `dsymutil`. GCC's invalid `-flto -g` object DWARF is what drives it.
+The historical entry name says `lto1`. The measured runaway process is Apple `dsymutil`. The invalid object DWARF that GCC writes with `-flto -g` causes the growth.
 
 ## Symptom
 
-The repository dev preset (Debug: `-O0 -g`) with `CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON` compiles every translation unit. The `examples/starter_httpd` link then never completes. Memory grows without bound in `dsymutil`, which the GCC driver invokes automatically after every successful `-g` link on Darwin. The identical link without `-g` completes in about 5 seconds. The Release LTO build (`-O3`, no `-g`) also links in seconds.
+The repository dev preset (Debug: `-O0 -g`) with `CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON` compiles every translation unit. The link of `examples/starter_httpd` then never completes. Memory grows without limit in `dsymutil`. The GCC driver starts `dsymutil` automatically after each successful `-g` link on Darwin. The identical link without `-g` completes in approximately 5 seconds. The Release LTO build (`-O3`, no `-g`) also links in seconds.
 
-Two separable defects produce the failure:
+Two separate defects cause the failure:
 
-1. GCC 16.1.0 with `-flto -g` on `aarch64-apple-darwin24` emits Mach-O objects whose `__DWARF` sections are invalid. `dwarfdump --verify` reports out-of-bounds `DW_AT_stmt_list` offsets, dangling DIE references, and invalid `DW_FORM` attributes. The same source without `-flto` verifies clean. GCC prints no diagnostic.
-2. Apple `dsymutil` consumes that invalid DWARF through the linked executable's `N_OSO` debug map and never gives up: it prints two warning lines per unresolved reference, re-walks endlessly (37 million warnings, 3.7 GB of stderr, in 600 seconds from a 4-file program), and at project scale allocates tens of GB per second.
+1. GCC 16.1.0 with `-flto -g` on `aarch64-apple-darwin24` writes Mach-O objects that contain invalid `__DWARF` sections. `dwarfdump --verify` reports out-of-bounds `DW_AT_stmt_list` offsets, dangling DIE references, and invalid `DW_FORM` attributes. The same source without `-flto` shows no verification errors. GCC shows no diagnostic message.
+2. Apple `dsymutil` reads that invalid DWARF through the `N_OSO` debug map of the linked executable, and it does not stop. It writes two warning lines for each unresolved reference. It walks the references again without end (37 million warnings and 3.7 GB of stderr in 600 seconds from a 4-file program). At project scale, it allocates tens of GB each second.
 
-Static archives are the necessary conduit. Darwin has no linker plugin, so `collect2`/`lto-wrapper` rewrites only command-line objects; archive members reach `ld64` as fat objects, the executable's debug map keeps pointing at the original members, and `dsymutil` reads their invalid `__DWARF`. Loose objects are rewritten by the LTO recompile, and the same graph links clean.
+Static archives are the necessary path. Darwin has no linker plugin, thus `collect2`/`lto-wrapper` rewrites only the objects named on the command line. Archive members reach `ld64` as fat objects. The debug map of the executable continues to point at the original members, and `dsymutil` reads their invalid `__DWARF`. The LTO recompile rewrites loose objects, and the same graph then links with no warnings.
 
 ## Environment
 
@@ -33,7 +33,7 @@ Static archives are the necessary conduit. Darwin has no linker plugin, so `coll
 
 ## Reproduction (minimal, 4 files, verified under guard)
 
-Every command was run with a watchdog that kills on 8 GB system swap growth, 12 GB process RSS, or 600 s, plus a companion that kills `dsymutil` above 6 GB RSS. Keep equivalent caps.
+We ran each command with a watchdog. The watchdog kills the run at 8 GB of system swap growth, at 12 GB of process RSS, or at 600 s. A companion process kills `dsymutil` above 6 GB of RSS. Keep equivalent limits.
 
 ```sh
 F="-std=c++26 -fmodules -O0 -g -flto=auto"
@@ -45,7 +45,7 @@ ar rcs libm.a p.o m.o
 g++-16 -O0 -g -flto=auto main.o std.o libm.a -o app   # <- never completes
 ```
 
-The compile steps succeed. The object DWARF is already wrong:
+The compile steps complete correctly. The object DWARF is already invalid:
 
 ```text
 $ dwarfdump --verify p.o
@@ -54,7 +54,7 @@ error: File index in DW_AT_decl_file reference CU with no line table occurred 64
 error: Invalid DIE reference occurred 1670 time(s).
 ```
 
-The link step runs `ld64` successfully, then the driver-spawned `dsymutil` floods stderr and never terminates:
+The link step runs `ld64` correctly. Then the `dsymutil` process, which the driver starts, floods stderr and does not stop:
 
 ```text
 warning: could not find referenced DIE
@@ -64,18 +64,18 @@ note: while processing libm.a(p.o)
 ...
 ```
 
-Guarded observation after 600 s: 37,340,227 copies of the warning, 3.7 GB of stderr, `dsymutil` still running. When the guard kills the process tree, the driver reports:
+Observation under the guard after 600 s: 37,340,227 copies of the warning, 3.7 GB of stderr, and `dsymutil` continues to run. When the guard kills the process tree, the driver reports:
 
 ```text
 collect2: fatal error: /usr/bin/dsymutil terminated with signal 9 [Killed: 9]
 compilation terminated.
 ```
 
-Expected result: the link and the debug-map step complete, as they do without `-flto` (the plain dev build of the same graph links and `dwarfdump --verify` reports `No errors.` on every object), and as they do with `-flto` without `-g`.
+Expected result: the link and the debug-map step complete. They complete without `-flto`: the plain dev build of the same graph links, and `dwarfdump --verify` reports `No errors.` on every object. They also complete with `-flto` and without `-g`.
 
 ## Full-project scale (memory explosion)
 
-Configure the repository dev preset with IPO forced on, then link `examples/starter_httpd` (9 objects; the module set is archived into `libstarter_module.a`):
+Configure the repository dev preset with IPO set to ON. Then link `examples/starter_httpd` (9 objects; the build puts the module set into the archive `libstarter_module.a`):
 
 ```sh
 cmake -S . -B build-devlto -G Ninja -DCMAKE_CXX_COMPILER=g++-16 \
@@ -83,7 +83,7 @@ cmake -S . -B build-devlto -G Ninja -DCMAKE_CXX_COMPILER=g++-16 \
 ninja -C build-devlto -j1 examples/starter_httpd
 ```
 
-All 25 compile/scan steps succeed. During the link, `dsymutil` RSS measured at 1-second intervals (`dsymutil-rss-growth.txt` has the full series):
+All 25 compile/scan steps complete correctly. During the link, we measured the `dsymutil` RSS at 1-second intervals (`dsymutil-rss-growth.txt` contains the full series):
 
 ```text
 1s   1994MB     8s  23868MB
@@ -93,15 +93,15 @@ All 25 compile/scan steps succeed. During the link, `dsymutil` RSS measured at 1
 7s  37462MB    13s  66957MB   <- ~67 GB, then compressor thrash 23-67 GB
 ```
 
-The guard killed the run when system swap crossed its cap:
+The guard killed the run when the system swap went above its limit:
 
 ```text
 BUILDGUARD KILL: swap=8375MB max_rss=0MB elapsed=96s (limits: 8192/12288/600)
 ```
 
-`max_rss=0` is the guard watching only `cc1plus`/`lto1`: the runaway is `dsymutil`. The orphaned `dsymutil` continued after the driver died; four minutes later it held ~24.4 GB RSS with 19.2 GB of swap used and was still growing when killed by hand. Its stderr held 13,679,041 `note: while processing` lines naming only `libstarter_module.a(starter.cc.o)` and `(core.cc.o)` — it never got past the second archive member. This run also printed `warning: Cann't load line table.` twice (verbatim, including the typo).
+The value `max_rss=0` occurs because the guard monitors only `cc1plus`/`lto1`. The runaway process is `dsymutil`. The orphaned `dsymutil` continued after the driver died. Four minutes later, it held approximately 24.4 GB of RSS with 19.2 GB of swap in use. It continued to grow until we killed it by hand. Its stderr held 13,679,041 `note: while processing` lines that named only `libstarter_module.a(starter.cc.o)` and `(core.cc.o)`. The process never got past the second archive member. This run also printed `warning: Cann't load line table.` two times (verbatim, with the typo).
 
-The identical link command without `-g` completes in 5 seconds with a working 16 MB executable.
+The identical link command without `-g` completes in 5 seconds and makes a functional 16 MB executable.
 
 ## Trigger matrix (each cell verified under guard)
 
@@ -115,34 +115,33 @@ The identical link command without `-g` completes in 5 seconds with a working 16
 | `-O0 -g -flto=1` (object side) | invalid, identical counts to `-flto=auto` | not separately linked; archives bypass the LTO plugin, so the partition count is irrelevant |
 | `-O0 -flto=auto`, no `-g`, modules, archive | n/a (`dsymutil` not invoked) | completes in seconds (also full project) |
 
-Necessary combination: `-g` AND `-flto` (any N) AND the module objects reaching `ld64` inside a static archive. `-O0` versus `-O2` is irrelevant. Modules and `import std` are not needed to make the DWARF invalid or to make `dsymutil` warn, but their debug volume (about 880 KB `__debug_info`, roughly 1,700 dangling references per importer TU) is what turns a bounded flood into an unbounded one; the plain-TU control finishes.
+The failure needs this combination: `-g` AND `-flto` (any N) AND module objects that reach `ld64` inside a static archive. The choice of `-O0` or `-O2` has no effect. Modules and `import std` are not necessary to make the DWARF invalid or to make `dsymutil` warn. But their debug volume (about 880 KB of `__debug_info`, roughly 1,700 dangling references per importer TU) changes a bounded flood into an unbounded one. The plain-TU control completes.
 
 ## Analysis
 
-With `-flto -g` on Darwin, GCC emits each object twice over: LTO bytecode plus early debug in `__GNU_DWARF_LTO`, and fat machine code plus regular `__DWARF` sections (Darwin defaults to fat objects because it has no linker plugin). The `__DWARF` copy is the broken one: its `DW_AT_stmt_list` offset (for example `0x0008f7ac` in `p.o`) lies far beyond its own `__debug_line`, and DIE references dangle — the attribute values appear to be resolved against the early-debug section layout and then emitted into the fat-code sections. Consumers of the fat half (`ld64`'s debug notes, `dsymutil`, any debugger reading the `.o` through the executable's `N_OSO` map) therefore see structurally invalid DWARF. `cc1plus` prints no warning that `-flto -g` produces unusable debug info on this target.
+With `-flto -g` on Darwin, GCC writes each object two times: LTO bytecode plus early debug data in `__GNU_DWARF_LTO`, and fat machine code plus regular `__DWARF` sections. (Darwin uses fat objects by default because it has no linker plugin.) The `__DWARF` copy is the invalid one. Its `DW_AT_stmt_list` offset (for example `0x0008f7ac` in `p.o`) points far beyond its own `__debug_line`, and the DIE references dangle. It appears that GCC resolves the attribute values against the early-debug section layout and then writes them into the fat-code sections. Thus each consumer of the fat half sees structurally invalid DWARF. The consumers are: the debug notes of `ld64`, `dsymutil`, and each debugger that reads the `.o` through the `N_OSO` map of the executable. `cc1plus` shows no warning that `-flto -g` makes unusable debug data on this target.
 
-The archive path makes it observable: `collect2`/`lto-wrapper` LTO-recompiles only objects named on the link line, so archive members contribute their fat code directly and stay referenced by the debug map. Darwin's driver then always runs `dsymutil` after a `-g` link. `dsymutil`'s handling of the invalid input is itself pathological — two stderr lines per bad reference, apparent re-walking (42 M warnings from 1,670 bad references in one member), unbounded allocation at scale — but it is fed garbage first.
+The archive path makes the defect visible. `collect2`/`lto-wrapper` recompiles with LTO only the objects named on the link line. Thus archive members supply their fat code directly, and the debug map continues to refer to them. The Darwin driver then always runs `dsymutil` after a `-g` link. The behavior of `dsymutil` on the invalid input is itself pathological: two stderr lines for each bad reference, apparent repeated walks (42 M warnings from 1,670 bad references in one member), and unbounded allocation at scale. But `dsymutil` receives the invalid input first.
 
 ## Suggested upstream destination
 
-1. GCC Bugzilla, product `gcc`, component `debug` (triage may move it to `target` as Darwin-specific), version `16.1.0`, keywords `wrong-debug, lto`. Title suggestion: `[Darwin] -flto -g emits invalid __DWARF sections in Mach-O objects (out-of-bounds DW_AT_stmt_list, dangling DIE references); driver-run dsymutil then grows without bound`. Attach `p.cc`, `mprim.cc`, `pmain.cc`, `hello.cc`, `hmain.cc`, the `dwarfdump --verify` output, and `dsymutil-rss-growth.txt`. The `hello.cc` control shows the invalid DWARF without any modules involvement, so the report must not be framed as a modules bug.
-2. Apple Feedback (second report, after the GCC report exists, following the `gcc-fixincludes-darwin-rsize-t` precedent): `dsymutil` must bound its work on invalid input — deduplicate the warning, and fail instead of allocating hundreds of GB. Reference the GCC PR for the producer side.
+1. GCC Bugzilla, product `gcc`, component `debug` (triage may move it to `target` as Darwin-specific), version `16.1.0`, keywords `wrong-debug, lto`. Title suggestion: `[Darwin] -flto -g emits invalid __DWARF sections in Mach-O objects (out-of-bounds DW_AT_stmt_list, dangling DIE references); driver-run dsymutil then grows without bound`. Attach `p.cc`, `mprim.cc`, `pmain.cc`, `hello.cc`, `hmain.cc`, the `dwarfdump --verify` output, and `dsymutil-rss-growth.txt`. The `hello.cc` control shows the invalid DWARF without modules. Thus do not present the report as a modules bug.
+2. Apple Feedback (a second report, after the GCC report exists, in agreement with the `gcc-fixincludes-darwin-rsize-t` precedent): `dsymutil` must limit its work on invalid input. It must deduplicate the warning, and it must fail instead of allocate hundreds of GB. Refer to the GCC PR for the producer side.
 
 ## Linux control (answered)
 
-The corruption is in the Mach-O/darwin emission path only. On aarch64-unknown-linux-gnu
-(the same GCC 16.1.0 sources, self-built): `llvm-dwarfdump --verify` reports **No errors**
-on ELF fat LTO module objects built `-O0 -g -flto -ffat-lto-objects`, and the
-archive-through-linker path that detonates on Darwin links and runs in seconds. Two
-independent Linux environments (Debian trixie container; Guix System under QEMU/HVF)
-reproduce nothing at any point of a matrix covering small/heavy module graphs,
-`import std`, `-freflection`, partitions, an exact replica of this project's TU graph at
-`-O0 -g -flto=auto`, a 4x-scale graph, and a mimicked plugin-less flow
-(`-ffat-lto-objects -fno-use-linker-plugin`): all links complete in 0–2 s with peak
-process RSS ≤ 689 MB, versus ~500 GB swap consumption on Darwin. Forced single-partition
-WPA over the full 21-TU graph on Linux: 0.36 s, 104 MB. File against the Darwin target
-side of the debug emission, with the ELF control attached.
+The corruption is only in the Mach-O/darwin emission path. The Linux control ran on aarch64-unknown-linux-gnu with the same GCC 16.1.0 sources, self-built. `llvm-dwarfdump --verify` reports **No errors** on ELF fat LTO module objects built with `-O0 -g -flto -ffat-lto-objects`. The archive-through-linker path, which causes the memory explosion on Darwin, links and runs in seconds on Linux. Two independent Linux environments (a Debian trixie container; Guix System under QEMU/HVF) reproduce nothing at any point of the matrix. The matrix covers:
+
+- small and heavy module graphs
+- `import std`
+- `-freflection`
+- partitions
+- an exact replica of the TU graph of this project at `-O0 -g -flto=auto`
+- a 4x-scale graph
+- a mimicked plugin-less flow (`-ffat-lto-objects -fno-use-linker-plugin`)
+
+All links complete in 0–2 s with peak process RSS ≤ 689 MB, versus approximately 500 GB of swap consumption on Darwin. Forced single-partition WPA over the full 21-TU graph on Linux completed in 0.36 s with 104 MB. File the report against the Darwin target side of the debug emission, and attach the ELF control.
 
 ## Local workaround
 
-The repository pins whole-program optimization to Release only (`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON`; Release carries no `-g`), so no configuration of this project links LTO objects while `-g` is active. See `PINS.md`.
+The repository limits whole-program optimization to Release only (`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON`; the Release build has no `-g`). Thus no configuration of this project links LTO objects while `-g` is active. See `PINS.md`.

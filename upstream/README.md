@@ -1,11 +1,13 @@
 # GCC submission queue
 
-Five entries, all verified and ready to file. The previous queue (Darwin `rsize_t`
-fixincludes, GMF variable ICE, silent empty `std` module, two Bugzilla comments) was
-submitted on 2026-08-10 and removed from the tree; recover that material from git
-history before commit `e0a9d27` if a maintainer asks. The one retained artifact is
-`gcc-fixincludes-darwin-rsize-t/fixed-header.h`, the live local fixinclude referenced
-by `PINS.md` until the upstream patch lands.
+The queue has six entries. Five entries are verified and ready to file. One entry
+is reopened for patch rework. We submitted the previously filed material (GMF
+variable ICE, silent empty `std` module, two Bugzilla comments) on 2026-08-10.
+Then we removed that material from the tree. If a maintainer asks for that
+material, recover it from the git history before commit `e0a9d27`. The `rsize_t`
+entry stays in the queue. Its report is filed (PR target/126782). But maintainer
+feedback redirected the fix from a Darwin fixincludes rule to `__need_rsize_t`
+support in GCC's `<stddef.h>`. Thus the patch work is open again.
 
 DCO means Developer Certificate of Origin. ICE means internal compiler error. GMF means
 global module fragment.
@@ -14,7 +16,7 @@ global module fragment.
 
 1. Use your existing GCC Bugzilla account.
 2. Use `Bjorn Pagen <hello@bjornpagen.com>` for every public submission.
-3. Read the [GCC DCO](https://gcc.gnu.org/dco.html) before sending any patch.
+3. Read the [GCC DCO](https://gcc.gnu.org/dco.html) before you send any patch.
 4. Confirm that you have the right to submit every patch line.
 
 The public mailing-list archive keeps your name, email address, and message permanently.
@@ -26,15 +28,17 @@ The public mailing-list archive keeps your name, email address, and message perm
 | `gcc-lto-modules-debug-oom` | File one report against the Darwin target side of debug emission. File one Apple Feedback (dsymutil) after the GCC PR exists. | Ready — Linux control done: ELF fat LTO objects verify clean, Mach-O only |
 | `gcc-darwin-fhardened-coverage` | File one `middle-end` report. Send one `configure.ac` Darwin-enablement patch after. | Ready — the umbrella is Linux-only by GCC's own configure |
 | `gcc-analyzer-call-summary-ice` | File one `analyzer` report. | Ready — the 21-line reduction ICEs on Linux too; cross-platform |
-| `gcc-analyzer-fd-leak-raii-fp` | File two `analyzer` reports. | Ready — both false positives reproduce verbatim on Linux |
+| `gcc-analyzer-fd-leak-raii-fp` | File two `analyzer` reports. | Ready — defect 1 reproduces on Linux; defect 2 occurs only on libcs without nothrow annotations |
 | `gcc-modules-freflection-typedef-merge` | File one `c++` report (`rejects-valid`, See Also PR 122785). | Ready — 6-line reduction, fails against both glibc and Apple SDK headers |
+| `gcc-fixincludes-darwin-rsize-t` | Write the replacement patch: `__need_rsize_t` in GCC `<stddef.h>` (PR target/126782, comments 3–5). Then the Apple report. | Reopened — fixincludes approach rejected by maintainer feedback; see the entry's `SUBMIT.md` work plan |
 
-Each entry's `README.md` carries the exact commands, verbatim output, environment
-tuple, analysis, and suggested Bugzilla component and title.
+The `README.md` of each entry contains the exact commands, the verbatim output, the
+environment tuple, the analysis, and the suggested Bugzilla component and title.
 
-DANGER, `gcc-lto-modules-debug-oom` only: run its reproduction exclusively under the
-memory guard documented in the entry. An unguarded run of the archive-link case grows
-without bound and once kernel-panicked the development machine.
+DANGER — this warning applies only to `gcc-lto-modules-debug-oom`. Run its
+reproduction only under the memory guard that the entry documents. An unguarded run
+of the archive-link case grows without bound. One unguarded run caused a kernel
+panic on the development machine.
 
 ## Policy sources
 
@@ -44,6 +48,6 @@ without bound and once kernel-panicked the development machine.
 - [GCC coding conventions](https://gcc.gnu.org/codingconventions.html)
 - [GCC mailing-list rules](https://gcc.gnu.org/lists.html)
 
-Send one polite ping after approximately two weeks if nobody replies. Reply to the
-original patch thread. Start a new thread for a revised patch and state each change
-from the earlier version.
+If nobody replies after approximately two weeks, send one polite ping. Send the
+ping as a reply to the original patch thread. Start a new thread for a revised
+patch. In that new thread, state each change from the earlier version.
