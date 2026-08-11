@@ -154,8 +154,8 @@ top-level CMake dependency declaration.
 - retire: when the fixincludes patch lands in the pinned GCC (and the
   silent-empty-fallback report is resolved, so a failed std-module build
   can no longer masquerade as success)
-- upstream: filed 2026-08-10 as PR target/126782 (See Also PR 116827); a
-  separate libstdc++ report covers the silent empty-module fallback
+- upstream: filed 2026-08-10 as PR target/126782 (See Also PR 116827); the
+  silent empty-module fallback is filed separately as PR 126786
   (corroboration Homebrew/homebrew-core#289142). Maintainer feedback on the
   PR rejects the fixincludes approach for Darwin; the replacement patch adds
   `__need_rsize_t` support to GCC's `<stddef.h>` — plan and superseded patch
