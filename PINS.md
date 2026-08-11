@@ -79,9 +79,10 @@ top-level CMake dependency declaration.
   native senders on every toolchain bump; once available, the backend re-binds
   `namespace ex` to `std::execution`, the FetchContent pin is deleted, and
   everything upward is untouched
-- upstream: `upstream/gcc-ice-gmf-consteval-redecl/` — 4-line repro (no
-  consteval needed; the directory name is historical), triage matrix
-  verified, dupe search clean; status SEND
+- upstream: filed on Bugzilla 2026-08-10; the reproduction directory
+  (`gcc-ice-gmf-consteval-redecl`, 4-line repro, no consteval needed) was
+  removed from the tree after filing — recover from git history before
+  commit `e0a9d27` if needed
 
 ## gcc-template-for-wshadow
 
@@ -153,10 +154,11 @@ top-level CMake dependency declaration.
 - retire: when the fixincludes patch lands in the pinned GCC (and the
   silent-empty-fallback report is resolved, so a failed std-module build
   can no longer masquerade as success)
-- upstream: `upstream/gcc-fixincludes-darwin-rsize-t/` (format-patch + DCO,
-  applies clean to trunk; final paired regression comparison in progress) and
-  `upstream/libstdcxx-silent-empty-std-module/` (Bugzilla report, status
-  SEND; corroboration Homebrew/homebrew-core#289142)
+- upstream: both filed 2026-08-10 (fixincludes patch + Bugzilla target
+  report; separate libstdc++ report for the silent empty-module fallback,
+  corroboration Homebrew/homebrew-core#289142). The submission material was
+  removed from the tree after filing; the live fixinclude survives as
+  `upstream/gcc-fixincludes-darwin-rsize-t/fixed-header.h`
 
 ## gcc-darwin-lto-debug-dsymutil
 

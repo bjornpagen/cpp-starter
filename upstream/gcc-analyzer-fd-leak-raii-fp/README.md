@@ -102,7 +102,11 @@ Two Bugzilla reports, since the defects are independent and one is C-scoped:
 
 Duplicate check: web searches for the diagnostic shapes (`-Wanalyzer-fd-leak` false positive with struct members / pointer parameters / RAII destructors, and for the anchored-at-close shape) on 2026-08-11 found no existing report; GCC Bugzilla's own search UI was unreachable from this network (bot-check interstitial), so run a Bugzilla quicksearch for `-Wanalyzer-fd-leak` at filing time.
 
-Before filing: rerun all three files on Linux. Expectation from the code path: defect 1 reproduces identically (target-independent liveness logic, plain C); defect 2 may vanish with glibc headers because `close` is `__THROW` there — if so, report it as arising on any libc without nothrow annotations, with Darwin as the concrete case. A Linux run is being arranged separately.
+Linux check (done): `repro-minimal.cc` under `g++ -std=c++26 -fanalyzer -O0` on
+aarch64-unknown-linux-gnu (same self-built GCC 16.1.0, Debian trixie, glibc headers)
+emits both false positives verbatim — `leak of file descriptor 'descriptor.Fd::value_'`
+and the `((const Fd)*server.Server::listener).Fd::value_` shape. Not Darwin-specific
+and not dependent on nothrow annotations; file as target-independent.
 
 ## Local workaround
 

@@ -128,6 +128,14 @@ Duplicate check: Bugzilla and web searches for `convert_region_from_summary` (du
 
 Before filing: rerun both commands on Linux to confirm the crash is target-independent, as expected from the code path (a Linux run is being arranged separately).
 
+## Linux check (done)
+
+Not Darwin-specific. The 21-line `repro-standalone.cc` reduction ICEs identically on
+aarch64-unknown-linux-gnu (same self-built GCC 16.1.0, Debian trixie): cc1plus crashes
+with the analyzer backtrace through `engine.cc` under the exact documented command. The
+larger `repro.cc` compiles clean on Linux at the same flags — mention both facts in the
+report; the reduction is the cross-platform testcase.
+
 ## Local workaround
 
 None needed. No build configuration in this repository enables `-fanalyzer-call-summaries`; the blocker arose in an exploratory analyzer run over `foreign/exec.backend.cc`. No `PINS.md` entry.
