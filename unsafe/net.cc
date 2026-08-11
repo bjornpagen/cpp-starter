@@ -110,8 +110,10 @@ namespace net_detail {
 }
 
 /**
- * A unique server capability. `run()` owns the event loop synchronously
- * until SIGINT or SIGTERM; destruction releases all remaining connections.
+ * A unique server capability. The first SIGINT or SIGTERM stops accepting
+ * and drains in-flight connections within the configured deadlines; a
+ * second signal returns immediately; destruction releases all remaining
+ * connections.
  */
 export class [[nodiscard]] HttpServer {
 public:
@@ -140,6 +142,9 @@ public:
 					    return net_detail::error_response(431, "Request Header Fields Too Large", "request headers too large\n", out);
 				    }
 				    return net_detail::error_response(400, "Bad Request", "bad request\n", out);
+			    }
+			    if (has_declared_body(*request)) {
+				    return net_detail::error_response(501, "Not Implemented", "request bodies are not supported\n", out);
 			    }
 			    auto const response = F{}(*request);
 			    if (!response) {

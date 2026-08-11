@@ -1,7 +1,8 @@
 #!/bin/sh
 # Smoke test for examples/httpd: boot the server on an ephemeral port, hit it
-# with concurrent curl requests, assert 200s and the body shape, then require
-# a clean SIGINT shutdown.
+# with concurrent curl requests, assert 200s and the body shape, reject a
+# body-bearing request with 501, require a draining SIGINT shutdown, then
+# prove a second instance survives accept() pressure under fd exhaustion.
 #
 # usage: httpd.smoke.sh <path-to-starter_httpd> [request-count]
 set -u
@@ -11,9 +12,13 @@ requests="${2:-64}"
 
 tmp="$(mktemp -d)" || exit 1
 server=""
+pressure_server=""
 cleanup() {
 	if [ -n "$server" ] && kill -0 "$server" 2>/dev/null; then
 		kill -9 "$server" 2>/dev/null
+	fi
+	if [ -n "$pressure_server" ] && kill -0 "$pressure_server" 2>/dev/null; then
+		kill -9 "$pressure_server" 2>/dev/null
 	fi
 	rm -rf "$tmp"
 }
@@ -105,17 +110,57 @@ if [ "$handler_error" != "500" ]; then
 	failed=$((failed + 1))
 fi
 
-# Clean shutdown: SIGINT, expect exit 0 and the "stopped" marker.
+# The template never reads message bodies: a request declaring one must be
+# refused with a complete 501, and refusal must not take down the reactor.
+body_code="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -d 'x=1' "http://127.0.0.1:$port/post")"
+if [ "$body_code" != "501" ]; then
+	echo "FAIL: body-bearing request: status $body_code (expected 501)"
+	failed=$((failed + 1))
+fi
+if ! kill -0 "$server" 2>/dev/null; then
+	echo "FAIL: server exited after rejecting a body-bearing request"
+	failed=$((failed + 1))
+fi
+
+# Draining shutdown: park a request mid-read, SIGINT the server, and require
+# the in-flight request to complete while new connections are refused. Then
+# expect exit 0 and the "stopped" marker.
+(
+	{
+		printf 'GET /drain HTTP/1.1\r\nHost: x\r\n'
+		sleep 1
+		printf '\r\n'
+	} | nc 127.0.0.1 "$port" >"$tmp/drain"
+) &
+drain=$!
+sleep 0.3
 kill -INT "$server"
+if ! wait "$drain"; then
+	echo "FAIL: drain probe client failed"
+	failed=$((failed + 1))
+fi
+if ! grep -q 'HTTP/1\.[01] 200' "$tmp/drain"; then
+	echo "FAIL: in-flight request did not complete with 200 across SIGINT"
+	failed=$((failed + 1))
+fi
+if ! grep -q 'path /drain' "$tmp/drain"; then
+	echo "FAIL: in-flight request body missing across SIGINT: $(cat "$tmp/drain")"
+	failed=$((failed + 1))
+fi
+
+# A new connection after the signal must not be served. Timing-tolerant: any
+# curl failure or non-200 status counts as refusal.
+sleep 0.2
+late="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/late" 2>/dev/null)" || late="000"
+if [ "$late" = "200" ]; then
+	echo "FAIL: server accepted and served a new request after SIGINT"
+	failed=$((failed + 1))
+fi
+
 wait "$server"
 status=$?
 server=""
 
-if [ "$failed" -ne 0 ]; then
-	echo "FAIL: $failed of $requests requests failed"
-	cat "$tmp/log"
-	exit 1
-fi
 if [ "$status" -ne 0 ]; then
 	echo "FAIL: server exited with status $status after SIGINT"
 	cat "$tmp/log"
@@ -127,4 +172,83 @@ if ! grep -q '^stopped$' "$tmp/log"; then
 	exit 1
 fi
 
-echo "pass: $requests concurrent requests on port $port, clean SIGINT shutdown"
+# Accept pressure: a second instance under a tight fd limit. Held-open
+# partial requests force accept() into EMFILE; the reactor must back off,
+# expire the stalled slots at the absolute deadline, and serve again.
+sh -c 'ulimit -n 24; exec "$1"' _ "$bin" >"$tmp/pressure.log" 2>&1 &
+pressure_server=$!
+
+pressure_port=""
+tries=0
+while [ "$tries" -lt 100 ]; do
+	pressure_port="$(sed -n 's/^listening \([0-9][0-9]*\)$/\1/p' "$tmp/pressure.log")"
+	[ -n "$pressure_port" ] && break
+	if ! kill -0 "$pressure_server" 2>/dev/null; then
+		echo "FAIL: pressure server exited before listening"
+		cat "$tmp/pressure.log"
+		exit 1
+	fi
+	sleep 0.1
+	tries=$((tries + 1))
+done
+if [ -z "$pressure_port" ]; then
+	echo "FAIL: pressure server announced no listening port"
+	cat "$tmp/pressure.log"
+	exit 1
+fi
+
+i=0
+while [ "$i" -lt 30 ]; do
+	(
+		{
+			printf 'GET /x HTTP/1.1\r\n'
+			sleep 4
+		} | nc 127.0.0.1 "$pressure_port" >/dev/null 2>&1
+	) &
+	i=$((i + 1))
+done
+
+# Ride out the storm: past the absolute deadlines the stalled slots expire,
+# descriptors free up, and the backed-off accept must re-arm.
+sleep 5
+if ! kill -0 "$pressure_server" 2>/dev/null; then
+	echo "FAIL: server died under accept() pressure"
+	cat "$tmp/pressure.log"
+	failed=$((failed + 1))
+else
+	recovered=""
+	tries=0
+	while [ "$tries" -lt 10 ]; do
+		code="$(curl -sS --max-time 5 -o "$tmp/recover" -w '%{http_code}' "http://127.0.0.1:$pressure_port/recover" 2>/dev/null)" \
+			&& [ "$code" = "200" ] && recovered=1 && break
+		sleep 1
+		tries=$((tries + 1))
+	done
+	if [ -z "$recovered" ]; then
+		echo "FAIL: server did not recover after accept() pressure"
+		cat "$tmp/pressure.log"
+		failed=$((failed + 1))
+	fi
+	kill -INT "$pressure_server"
+	wait "$pressure_server"
+	pressure_status=$?
+	pressure_server=""
+	if [ "$pressure_status" -ne 0 ]; then
+		echo "FAIL: pressure server exited with status $pressure_status after SIGINT"
+		cat "$tmp/pressure.log"
+		failed=$((failed + 1))
+	fi
+	if ! grep -q '^stopped$' "$tmp/pressure.log"; then
+		echo "FAIL: no clean-shutdown marker in pressure server output"
+		cat "$tmp/pressure.log"
+		failed=$((failed + 1))
+	fi
+fi
+
+if [ "$failed" -ne 0 ]; then
+	echo "FAIL: $failed smoke checks failed"
+	cat "$tmp/log"
+	exit 1
+fi
+
+echo "pass: $requests concurrent requests on port $port, 501 body rejection, draining SIGINT shutdown, accept-pressure recovery"

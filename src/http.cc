@@ -218,6 +218,22 @@ export [[nodiscard]] auto parse_request(std::string_view input) -> std::expected
 }
 
 /**
+ * This template does not read message bodies; a request that declares
+ * one is answered 501 by the module trampoline.
+ */
+export [[nodiscard]] auto has_declared_body(Request const& request) -> bool {
+	for (auto const& header : request.headers) {
+		if (ascii_equal_fold(header.name, "Transfer-Encoding")) {
+			return true;
+		}
+		if (ascii_equal_fold(header.name, "Content-Length") && header.value != "0") {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
  * Returns one owned connection-closing response. Framing is owned here:
  * callers may not supply Content-Length, Transfer-Encoding, or Connection.
  * Size arithmetic and the wire bound are checked before allocation.

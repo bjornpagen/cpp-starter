@@ -34,6 +34,8 @@ using ServerOwner = std::unique_ptr<Server, ServerDeleter>;
 using WireError = std::array<std::int32_t, 2>;
 using RawHandler = std::optional<std::size_t> (*)(std::string_view request, std::span<char> out) noexcept;
 
+[[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool;
+
 namespace {
 
 inline constexpr std::size_t buffer_bytes = 8192;
@@ -55,6 +57,10 @@ inline constexpr std::int32_t stage_accept = 10;
 inline constexpr std::uint64_t listener_token = 1;
 inline constexpr std::uint64_t interrupt_token = 2;
 inline constexpr std::uint64_t terminate_token = 3;
+inline constexpr std::uint64_t retry_token = 4;
+/* EVFILT_TIMER idents are namespaced by filter, so no fd collision */
+inline constexpr std::uint64_t retry_timer_ident = 1;
+inline constexpr std::chrono::milliseconds accept_retry_delay{100};
 inline constexpr std::uint64_t slot_bits = 8;
 inline constexpr std::uint64_t slot_mask = (std::uint64_t{1} << slot_bits) - 1;
 inline constexpr std::uint64_t max_generation = std::numeric_limits<std::uint64_t>::max() >> slot_bits;
@@ -297,6 +303,7 @@ struct Server {
 	std::size_t slot_count;
 	std::array<Slot, max_connections> slots{};
 	bool listener_armed = false;
+	bool accept_backoff = false;
 	bool ran = false;
 	std::chrono::milliseconds request_timeout{0};
 	std::chrono::milliseconds response_timeout{0};
@@ -321,7 +328,7 @@ auto release_slot(Slot& slot) -> void {
 }
 
 [[nodiscard]] auto arm_listener(Server& server) noexcept -> std::expected<void, WireError> {
-	if (server.listener_armed || !find_vacant(server)) {
+	if (server.accept_backoff || server.listener_armed || !find_vacant(server)) {
 		return {};
 	}
 	auto const event = make_event(static_cast<std::uint64_t>(server.listener.get()), EVFILT_READ, EV_ADD | EV_ONESHOT, 0, listener_token);
@@ -390,10 +397,12 @@ auto release_slot(Slot& slot) -> void {
 		if (reading->received == slot.input.size()) {
 			break;
 		}
+		auto const received_before = reading->received;
 		auto const count = ::read(slot.descriptor.get(), slot.input.data() + reading->received, slot.input.size() - reading->received);
 		if (count > 0) {
 			reading->received += static_cast<std::size_t>(count);
-			auto const input = std::string_view{slot.input.data(), reading->received};
+			auto const seam = received_before >= 3 ? received_before - 3 : 0;
+			auto const input = std::string_view{slot.input.data() + seam, reading->received - seam};
 			if (input.contains("\r\n\r\n")) {
 				break;
 			}
@@ -438,6 +447,15 @@ auto release_slot(Slot& slot) -> void {
 				continue;
 			}
 			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				return {};
+			}
+			if (err_transient(errno)) {
+				server.accept_backoff = true;
+				auto event = make_event(retry_timer_ident, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, retry_token);
+				event.data = accept_retry_delay.count();
+				if (auto const code = submit(server.queue.get(), event); code != 0) {
+					return std::unexpected(wire_error(stage_queue, code));
+				}
 				return {};
 			}
 			return std::unexpected(wire_error(stage_accept, errno));
@@ -496,22 +514,40 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	return {};
 }
 
-[[nodiscard]] auto dispatch(Server& server, std::span<::kevent64_s const> events, RawHandler handler) noexcept
-    -> std::expected<bool, WireError> {
-	if (std::ranges::any_of(events, [](auto const& event) {
-		    return event.udata == interrupt_token || event.udata == terminate_token;
-	    })) {
-		return true;
-	}
+[[nodiscard]] auto connections_idle(Server const& server) -> bool {
+	return std::ranges::all_of(std::span{server.slots}.first(server.slot_count), [](Slot const& slot) {
+		return std::holds_alternative<std::monostate>(slot.state);
+	});
+}
 
+[[nodiscard]] auto dispatch(Server& server, std::span<::kevent64_s const> events, RawHandler handler, bool& draining) noexcept
+    -> std::expected<bool, WireError> {
 	for (auto const& event : events) {
+		if (event.udata == interrupt_token || event.udata == terminate_token) {
+			if (draining) {
+				return true;
+			}
+			draining = true;
+			continue;
+		}
 		if (event.udata == listener_token) {
 			if ((event.flags & EV_ERROR) != 0) {
 				return std::unexpected(wire_error(stage_queue, static_cast<std::int32_t>(event.data)));
 			}
+			if (draining) {
+				server.listener_armed = false;
+				continue;
+			}
 			if (auto accepted = accept_ready(server, handler); !accepted) {
 				return std::unexpected(accepted.error());
 			}
+			continue;
+		}
+		if (event.udata == retry_token) {
+			if ((event.flags & EV_ERROR) != 0) {
+				return std::unexpected(wire_error(stage_queue, static_cast<std::int32_t>(event.data)));
+			}
+			server.accept_backoff = false;
 			continue;
 		}
 
@@ -624,6 +660,7 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	}
 
 	auto events = std::array<::kevent64_s, 64>{};
+	auto draining = false;
 	for (;;) {
 		auto timeout = timeout_until(nearest_deadline(server));
 		auto const count =
@@ -636,15 +673,20 @@ auto expire_slots(Server& server, Deadline now) -> void {
 		}
 		expire_slots(server, Clock::now());
 		auto const ready = std::span{events}.first(static_cast<std::size_t>(count));
-		auto dispatched = dispatch(server, ready, handler);
+		auto dispatched = dispatch(server, ready, handler, draining);
 		if (!dispatched) {
 			return std::unexpected(dispatched.error());
 		}
 		if (*dispatched) {
 			return {};
 		}
-		if (auto armed = arm_listener(server); !armed) {
-			return armed;
+		if (draining && connections_idle(server)) {
+			return {};
+		}
+		if (!draining) {
+			if (auto armed = arm_listener(server); !armed) {
+				return armed;
+			}
 		}
 	}
 }

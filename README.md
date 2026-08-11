@@ -30,7 +30,9 @@ Application handlers are compile-time-selected stateless callables: they
 receive `Request const&` and return `std::expected<Response, E>`, with an
 application-specific error. This intentionally avoids storing an erased
 callback or an application-state borrow in the reactor. A handler runs inline
-on the owner loop and must be bounded and nonblocking. The public writer
+on the owner loop and must be bounded and nonblocking. Requests that declare
+a message body are rejected with 501: the template does not read bodies. The
+public writer
 returns owned bounded bytes and derives HTTP framing; the quarantine trampoline
 alone copies that value into the fixed reactor buffer.
 
@@ -52,7 +54,9 @@ The server prints `listening <port>` and blocks in its owner-driven loop:
 curl http://127.0.0.1:<port>/hello
 ```
 
-Send SIGINT or SIGTERM for a clean shutdown.
+Send SIGINT or SIGTERM for a clean shutdown. The first signal stops accepting
+and drains in-flight connections within the configured deadlines; a second
+signal exits immediately.
 
 | Preset | Purpose |
 |---|---|
@@ -99,7 +103,8 @@ when they arrive, the one vendor boundary is rewritten over `std::execution`.
 - `asan-ubsan` runs the full unit and HTTP smoke suite,
 - parser and writer tests pin ownership, bounds, and failure transparency,
 - the HTTP smoke test exercises concurrent clients, malformed input, typed
-  handler failure, absolute-deadline expiry, and signal-driven shutdown.
+  handler failure, body rejection, absolute-deadline expiry, draining
+  signal-driven shutdown, and recovery from accept pressure.
 
 ## Known macOS toolchain issues
 

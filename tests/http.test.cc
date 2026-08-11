@@ -115,6 +115,39 @@ constexpr std::string_view valid_request = "GET /hello/world HTTP/1.1\r\n"
 	};
 }
 
+[[nodiscard]] auto request_with_header(std::string name, std::string value) -> starter::Request {
+	return starter::Request{
+	    .method = "POST",
+	    .target = "/",
+	    .version = "HTTP/1.1",
+	    .headers = {starter::Header{.name = std::move(name), .value = std::move(value)}},
+	};
+}
+
+[[nodiscard]] auto check_declared_body_absent() -> CaseResult {
+	auto const bare = starter::Request{.method = "GET", .target = "/", .version = "HTTP/1.1", .headers = {}};
+	return CaseResult{
+	    .name = "has_declared_body: no headers and Content-Length 0 declare no body",
+	    .passed = !starter::has_declared_body(bare) && !starter::has_declared_body(request_with_header("Content-Length", "0")),
+	};
+}
+
+[[nodiscard]] auto check_declared_body_content_length() -> CaseResult {
+	return CaseResult{
+	    .name = "has_declared_body: nonzero Content-Length declares a body case-insensitively",
+	    .passed = starter::has_declared_body(request_with_header("Content-Length", "5")) &&
+	              starter::has_declared_body(request_with_header("content-length", "5")),
+	};
+}
+
+[[nodiscard]] auto check_declared_body_transfer_encoding() -> CaseResult {
+	return CaseResult{
+	    .name = "has_declared_body: any Transfer-Encoding declares a body case-insensitively",
+	    .passed = starter::has_declared_body(request_with_header("Transfer-Encoding", "chunked")) &&
+	              starter::has_declared_body(request_with_header("TRANSFER-ENCODING", "chunked")),
+	};
+}
+
 [[nodiscard]] auto check_write_response() -> CaseResult {
 	auto const response = starter::Response{
 	    .status = 200,
@@ -232,6 +265,9 @@ auto main() -> int {
 	    check_malformed_request_lines(),
 	    check_malformed_headers(),
 	    check_too_many_headers(),
+	    check_declared_body_absent(),
+	    check_declared_body_content_length(),
+	    check_declared_body_transfer_encoding(),
 	    check_write_response(),
 	    check_write_response_roundtrip(),
 	    check_write_response_owns_output(),
