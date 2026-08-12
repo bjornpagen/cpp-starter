@@ -1,6 +1,6 @@
 # Analyzer false-positive fd leaks on canonical RAII fd owners
 
-Status: the analysis is complete. We verified the reproduction under the guard. We traced the root causes to source. The Linux check is also complete: defect 1 reproduces on Linux, and defect 2 does not (see the section "Linux check (done)"). The reports are ready to file. Trunk check by run: defect 1 fires on master commit 475e9eff with identical warning counts. The assumed-not-to-throw list is unchanged there, so defect 2's basis persists. Official-image check by run: the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12) reproduces defect 1 with identical warning counts (`repro.cc` 3, `repro-minimal.cc` 2, `repro.c` 1), which closes the "unofficial self-built compiler" objection — self-built Darwin, self-built Linux, the official image, and self-built master all agree.
+Status: the analysis is complete. Defect 1 is [GCC PR 126806](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126806). Defect 2 is [GCC PR 126819](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126819). Both reports are UNCONFIRMED and awaiting triage. We verified the reproductions under the guard and traced the root causes to source. The Linux check is also complete: defect 1 reproduces on Linux, and defect 2 does not (see the section "Linux check (done)"). Trunk check by run: defect 1 fires on master commit 475e9eff with identical warning counts. The assumed-not-to-throw list is unchanged there, so defect 2's basis persists. Official-image check by run: the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12) reproduces defect 1 with identical warning counts (`repro.cc` 3, `repro-minimal.cc` 2, `repro.c` 1), which closes the "unofficial self-built compiler" objection — self-built Darwin, self-built Linux, the official image, and self-built master all agree.
 
 Each compile below completes immediately and allocates nothing unusual. We still ran each compile under the standard guard (`/tmp/buildguard.sh 8192 12288 600 ...`), one compile at a time. The guard did not fire.
 
@@ -133,12 +133,17 @@ The initial value of a field reached through a parameter satisfies neither case.
 
 The GCC 16 release notes say that the analyzer is "now usable on simple C++ examples". But `invoke.texi` still says that the analyzer "is only suitable for use on C code in this release". `repro.c` keeps defect 1 fully inside the supported C scope. Thus triage cannot dismiss the primary report as a C++ limitation.
 
-## Suggested upstream destination
+## Public reports
 
-File two Bugzilla reports, because the defects are independent and one is C-scoped:
+We filed two reports because the defects are independent:
 
-1. GCC Bugzilla, product `gcc`, component `analyzer`, version `16.1.0`, keywords `diagnostic`. Title suggestion: `[analyzer] -Wanalyzer-fd-leak false positive on fd owned by caller through pointer/reference parameter (state purged when loading temporary dies)`. Attach `repro.c` (primary, plain C) and `repro-minimal.cc`. Both are small enough to inline. Point at the `sm_state_map::on_liveness_change` / `initial_svalue::implicitly_live_p` interaction. Note that the sites are unchanged on master.
-2. GCC Bugzilla, product `gcc`, component `analyzer`, version `16.1.0`, keywords `diagnostic`. Title suggestion: `[analyzer] fd/resource leak false positives from assumed-throwing libc calls (close, fcntl) on targets without nothrow header annotations; noexcept destructors not modeled`. Attach `repro-minimal.cc`. Reference the one-entry `get_fns_assumed_not_to_throw` whitelist. Ask whether the analyzer must assume that sm-fd's own known functions do not throw. Ask whether unwinding must stop at noexcept frames. Note `-fanalyzer-assume-nothrow` as the existing blunt workaround.
+1. [GCC PR 126806](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126806)
+   covers the false fd-leak warning for a caller-owned struct member.
+2. [GCC PR 126819](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126819)
+   covers the throwing edge through a `noexcept` destructor.
+
+Both reports remain UNCONFIRMED. Wait for analyzer maintainer feedback before
+selecting a patch design.
 
 Duplicate check: on 2026-08-11 we did web searches for the diagnostic shapes (`-Wanalyzer-fd-leak` false positive with struct members / pointer parameters / RAII destructors, and the anchored-at-close shape). The searches found no existing report. GCC Bugzilla's own search UI was unreachable from this network (bot-check interstitial). Thus run a Bugzilla quicksearch for `-Wanalyzer-fd-leak` at filing time. Update: we completed that search through the Bugzilla REST API on 2026-08-11. The section "Related reports (verified 2026-08-11)" records the results. No existing report covers either defect.
 
@@ -150,11 +155,12 @@ separates the two defects cleanly:
   `((const Fd)*server).Fd::value_` shape. But the diagnostic paths contain zero
   "throws an exception" events (`grep -c` over the full output: 0). On glibc, the
   warnings come from the defect-1 purge logic alone.
-- Thus defect 1 is target-independent. File it as such.
+- Thus defect 1 is target-independent. PR 126806 uses this framing.
 - Thus defect 2 does not reproduce on glibc, because glibc declares `close`/`fcntl`
   with `__THROW`. This confirms the prediction in the Analysis section. File defect 2
   as a defect that occurs on any libc without nothrow annotations, with Darwin as the
-  concrete case, and name `-fanalyzer-assume-nothrow` as the flag-level control.
+  concrete case. PR 126819 names `-fanalyzer-assume-nothrow` as the flag-level
+  control.
 
 The full Linux diagnostic output is preserved at
 `/Users/bjorn/finch-gcc16/fdleak-linux-full.txt` (not part of this repository).
@@ -188,4 +194,7 @@ Clean-search notes (searches that returned no relevant report, run 2026-08-11):
 
 ## Local workaround
 
-None is necessary. The build deliberately omits `-fanalyzer`. See the "Deliberately absent" list in the top-level `README.md`: the analyzer bails out on exactly the reactor code that it would need to analyze. That decision predates this entry. The blocker arose in an exploratory analyzer run over `unsafe/net.backend.cc`. There is no `PINS.md` entry.
+None is necessary. The build deliberately omits `-fanalyzer` because the
+analyzer stops on the reactor code that it would need to analyze. That decision
+predates this investigation. The defect appeared during an exploratory analyzer
+run over `unsafe/net.backend.cc`.

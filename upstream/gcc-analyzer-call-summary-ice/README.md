@@ -5,7 +5,8 @@ Status:
 - The analysis is complete.
 - The reproduction is verified under guard.
 - The root cause is traced to source.
-- The Linux check is complete. The 21-line reduction causes the same ICE on Linux (see the section "Linux check (done)"). The report is ready to file.
+- The report is [GCC PR 126805](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126805). It is UNCONFIRMED and awaiting triage.
+- The Linux check is complete. The 21-line reduction causes the same ICE on Linux (see the section "Linux check (done)").
 - Trunk check by run: both reproductions ICE on master commit 475e9eff (Linux container build, 2026-08-12).
 - Official-image check by run: both reproductions ICE with exit 1 on the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12) — including the primary `repro.cc`, which the self-built Linux 16.1.0 compiled clean. This closes the "unofficial self-built compiler" objection: self-built Darwin, self-built Linux, the official image, and self-built master all show the bug.
 
@@ -153,18 +154,15 @@ The assertion reports a real modeling error; it is not a stale invariant. For a 
 
 `take` never gets past the cache warm-up in `convert_region_from_summary`. Thus the failure is deterministic and immediate. No part of the crash looks Darwin-specific on its face. But at that point, we ran only the Darwin build.
 
-## Suggested upstream destination
+## Public report
 
-File in GCC Bugzilla:
+We filed [GCC PR 126805](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126805)
+in the `analyzer` component with the `ice-on-valid-code` keyword. The report
+uses `repro-standalone.cc` as the library-free reduction and includes the
+official-image preprocessed source. It remains UNCONFIRMED.
 
-- Product: `gcc`
-- Component: `analyzer`
-- Version: `16.1.0`
-- Keywords: `ice-on-valid-code`
-- Known to fail: 16.1.0, 17.0 (master 475e9eff)
-- Title suggestion: `[analyzer] ICE in call_summary_replay::convert_region_from_summary on call summaries for functions returning by invisible reference`
-
-Attach `repro.cc` (primary, flags only). Attach `repro-standalone.cc` (library-free, needs the `--param`). Both bodies are small enough to include inline in the report. State that the assert and the unreconciled `RESULT_DECL` path are unchanged on current master, and that both reproductions ICE by run on master 475e9eff.
+The next action is to wait for triage. Prepare a patch only after the fix and
+regression test are validated.
 
 Duplicate check: we searched Bugzilla and the web for `convert_region_from_summary`, during the original probe and again on 2026-08-11. The searches found no existing report that names this function or this assert.
 
@@ -191,4 +189,6 @@ The crash is not Darwin-specific. The 21-line `repro-standalone.cc` reduction cr
 
 ## Local workaround
 
-No workaround is necessary. No build configuration in this repository enables `-fanalyzer-call-summaries`. The blocker occurred in an exploratory analyzer run over `foreign/exec.backend.cc`. There is no `PINS.md` entry.
+No workaround is necessary. No build configuration in this repository enables
+`-fanalyzer-call-summaries`. The defect appeared during an exploratory analyzer
+run over `foreign/exec.backend.cc`.

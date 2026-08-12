@@ -1,6 +1,8 @@
-# `-fhardened` on aarch64-apple-darwin: unsupported-target warning is unclassifiable, umbrella silently partial
+# `-fhardened` unsupported-target diagnostics
 
-Status: the analysis is complete, and the reproduction is verified. The Linux control is also complete: on aarch64-unknown-linux-gnu (same self-built GCC 16.1.0), `g++ -fhardened -Whardened -O2` compiles with exit 0 and no warning, and `-E -dM` shows `_FORTIFY_SOURCE 3` and `__SSP_STRONG__ 3` defined. The umbrella applies fully on Linux. Trunk: the `configure.ac` gate persists on master commit 475e9eff (source check, 2026-08-12). The reports are ready to file.
+Status: the analysis and reproduction are complete. [GCC PR 126822](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126822) covers the warning-class problem and awaits triage. [GCC PR 126823](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126823) covered partial behavior on Darwin. A maintainer said that PR 126823 works as designed because `-fhardened` is supported only on GNU/Linux. We closed that work locally and will not propose Darwin enablement or partial-application patches.
+
+The Linux control is complete: on aarch64-unknown-linux-gnu (same self-built GCC 16.1.0), `g++ -fhardened -Whardened -O2` compiles with exit 0 and no warning, and `-E -dM` shows `_FORTIFY_SOURCE 3` and `__SSP_STRONG__ 3` defined. The umbrella applies fully on Linux. Trunk source at commit 475e9eff retains the documented target gate.
 
 This is not a memory issue. Each command here compiles a one-line file and completes in less than one second. We still ran all commands under the standard guard (`/tmp/buildguard.sh 8192 12288 600 ...`) to obey house policy. The guard never fired.
 
@@ -140,21 +142,27 @@ Duplicate searches with no result (GCC Bugzilla quicksearch, 2026-08-11):
 - "fhardened bsd" — zero hits.
 - "fhardened musl" — zero hits.
 
-Conclusion of the search: no BSD, musl, Darwin, or other-target report asks for `-fhardened` coverage, and no report covers the `cc1`-side class-0 rejection or the silent partial application. PR 117967 covers only the driver-side sibling of defect 3. This report is not a duplicate.
+Conclusion of the search at filing time: PR 117967 covered only the driver-side
+sibling of the class-0 diagnostic.
 
-## Suggested upstream destination
+## Public reports and outcome
 
-File TWO Bugzilla reports, per the one-bug-per-report rule in `upstream/SUBMISSION-CHECKLIST.md`. Both defects are target-independent for each non-`linux*|gnu*` OS. Present the reproduction on `aarch64-apple-darwin24`.
+1. [GCC PR 126822](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126822)
+   covers the unclassifiable cc1 warning. It remains UNCONFIRMED. The report
+   asks only whether `-Whardened` must control this diagnostic.
+2. [GCC PR 126823](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126823)
+   covered partial application after target rejection. A maintainer said that
+   this behavior works as designed because `-fhardened` is supported only on
+   GNU/Linux. Do not pursue this report.
 
-1. Report A — the unclassifiable cc1-side warning (defect 3). Product `gcc`, component `middle-end`, version `16.1.0`, keyword `diagnostic`. Title suggestion: `-fhardened 'not supported for this target' warning from cc1 has no warning class; -Wno-hardened and -Wno-error=hardened have no effect`. Body: the three command/output pairs from reproduction section 1 (`-Werror`, `-Wno-error=hardened`, `-Wno-hardened`). Inline `hardened.cc`. Set See Also: PR 117967, the driver-side sibling of this defect, which Marek Polacek confirmed.
-2. Report B — the silent partial application (defect 2). Product `gcc`, component `middle-end`, version `16.1.0`, keyword `diagnostic`. Title suggestion: `-fhardened applied partially after target rejection, with no per-constituent report`. Body: the `-E -dM` macro evidence and the `-Q --help=common` diff from reproduction section 2. Attach `constituents.cc` and `assertions.cc` as constituent-support evidence. Quote Richard Biener's design-intent statement, already cited in "Related reports": "the default configuration for a target should with -fhardened _not_ have any -Whardened diagnostics".
-3. Defect 1 (the enablement gap) is NOT a Bugzilla report. It is the `configure.ac` patch queued in `upstream/TODO.md`. Marek Polacek's statement invites it: "If other OSs want to use -fhardened, they need to update the configure test." Send the patch to gcc-patches after reports A and B have PR numbers to cite. CC the Darwin maintainers, per the `gcc-fixincludes-darwin-rsize-t` precedent. The constituent evidence in `constituents.cc`/`assertions.cc` is the justification. The `_string.h:226` FORTIFY gate is the reason the patch must not inject `_FORTIFY_SOURCE` claims for Darwin C++.
-
-Before you file the report, do these two checks:
-
-1. Confirm on Linux (the control) that `-fhardened -Whardened -Werror` is clean and enables all constituents there.
-2. Check trunk for a later change that reclassifies the warning or reorders the rejection.
+The original investigation proposed Darwin enablement. That proposal did not
+respect the documented support boundary. Do not write the `configure.ac`
+enablement patch. Keep the evidence for the process record.
 
 ## Local workaround
 
-The repository never uses `-fhardened`. The language profile in `CMakeLists.txt` spells the working constituents individually: `-ftrivial-auto-var-init=zero`, `-fstack-protector-strong`, `-fzero-call-used-regs=used-gpr`, and GNU-scoped `-fstack-clash-protection`. This set is exactly the set that the umbrella would silently truncate. See `PINS.md`.
+The repository never uses `-fhardened`. The language profile in
+`CMakeLists.txt` spells the selected hardening options individually:
+`-ftrivial-auto-var-init=zero`, `-fstack-protector-strong`,
+`-fzero-call-used-regs=used-gpr`, and GNU-scoped
+`-fstack-clash-protection`.

@@ -185,9 +185,10 @@ The flag on either side of the import alone is sufficient. This indicates that t
 
 Cross-platform: we reproduced the failure against both glibc (`typedef struct ... __mbstate_t`, Debian trixie, aarch64) and Apple SDK headers (`typedef union ... __mbstate_t`, Darwin arm64). Thus nothing here is specific to Darwin or to fixincludes. LTO is irrelevant (see above). GCC 16 is the first release with `-freflection`. Thus this cannot be a regression from a released compiler.
 
-## Suggested upstream destination
+## Original filing analysis
 
-File in GCC Bugzilla, product `gcc`, component `c++`, version `16.1.0`, keywords `rejects-valid`. Title suggestion: `[modules] -freflection breaks merging of typedef-named unnamed structs between GMF and textual include (conflicting imported declaration for libc __mbstate_t)`.
+Do not file this report. The analysis below records the pre-duplicate-search
+proposal. PR 124582 already covered and fixed the defect.
 
 In the report:
 
@@ -255,4 +256,5 @@ Do not mix `-freflection` with `-fmodules` in TUs that textually include libc-re
 - Make consumers include-free before imports.
 - Remove `-freflection` from module builds.
 
-No build configuration in this repository enables `-freflection`. The blocker occurred in the GCC 16 reflection probe cells. There is no `PINS.md` entry.
+No build configuration in this repository enables `-freflection`. The defect
+appeared in the GCC 16 reflection probe cells.

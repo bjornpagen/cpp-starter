@@ -1,6 +1,10 @@
 # Darwin `-flto -g` objects contain invalid DWARF and cause `dsymutil` to grow without limit
 
-Status: the analysis is complete. We verified the reproduction under the guard. The Linux check is also complete: the defect is Mach-O-only (see the section "Linux control (answered)"). The entry is ready to comment (see "Suggested upstream destination"). The duplicate search is complete (2026-08-11): see "Related reports".
+Status: the analysis is complete. We verified the reproduction under the guard.
+The Linux check is also complete: the defect is Mach-O-only (see the section
+"Linux control (answered)"). The planned GCC and LLVM comments have not been
+submitted. The duplicate search is complete (2026-08-11): see "Related
+reports".
 
 DO NOT run this reproduction without the guard. The full-project form grew one `dsymutil` process to 67 GB of RSS in 13 seconds on a 96 GB machine. An earlier run without the guard used approximately 500 GB of swap in 13 minutes and caused a kernel panic on the host. Set limits on memory and on wall time. Kill `dsymutil` yourself: the compiler driver runs it as a grandchild of `collect2`. If you kill only the driver, `dsymutil` becomes an orphan and continues to grow.
 
@@ -183,4 +187,6 @@ All links complete in 0–2 s with peak process RSS ≤ 689 MB, versus approxima
 
 ## Local workaround
 
-The repository limits whole-program optimization to Release only (`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON`; the Release build has no `-g`). Thus no configuration of this project links LTO objects while `-g` is active. See `PINS.md`.
+The repository limits whole-program optimization to Release only
+(`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON`; the Release build has no
+`-g`). Thus no project configuration links LTO objects while `-g` is active.
