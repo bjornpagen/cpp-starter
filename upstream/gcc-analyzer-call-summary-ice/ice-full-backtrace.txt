@@ -1,0 +1,9 @@
+during IPA pass: analyzer
+In function 'void run(payload&, payload&)',
+    inlined from 'void caller1(payload&, payload&)' at repro-standalone.cc:16:5:
+repro-standalone.cc:12:19: internal compiler error: in convert_region_from_summary, at analyzer/call-summary.cc:550
+   12 |         out = take(v);
+      |               ~~~~^~~
+/Users/bjorn/.gcc/versions/16.1.0/libexec/gcc/aarch64-apple-darwin24/16.1.0/cc1plus -quiet -D__DYNAMIC__ repro-standalone.cc -fPIC -quiet -dumpbase repro-standalone.cc -dumpbase-ext .cc -mmacosx-version-min=15.0.0 -mcpu=apple-m1 -mlittle-endian -mabi=lp64 -O2 -std=c++17 -fanalyzer -fanalyzer-call-summaries --param=analyzer-min-snodes-for-call-summary=0 -o /var/folders/fj/10pmb37j1m1cy6d1lfclvvrw0000gn/T//ccQBUiOJ.s
+Please submit a full bug report, with preprocessed source (by using -freport-bug).
+See <https://gcc.gnu.org/bugs/> for instructions.

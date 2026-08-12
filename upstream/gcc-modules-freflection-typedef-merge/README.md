@@ -1,6 +1,8 @@
 # -freflection breaks module merging of typedef-named unnamed types shared between the GMF and a textual include
 
-Status: We verified the reproduction under guard on Darwin today. We reduced the bug to a 6-line library-free testcase. We recorded Linux (glibc) evidence from the probe logs. The report is ready to file.
+Status: DO NOT FILE. The defect is PR 124582, RESOLVED FIXED for GCC 16.2 (fix r17-205, backport r16-8841). Our trunk run confirms the fix: all four reproduction compiles (`mr.cc`, `main_refl.cc`, `reduced-module.cc`, `reduced-main.cc`) exit 0 on master commit 475e9eff (Linux container build, 2026-08-12; matrix at `/Users/bjorn/finch-gcc16/trunkcheck/trunk-matrix.txt`). The fix empirically covers our reduction. This entry stays as a record. The retire action is a toolchain bump to a GCC that contains the fix.
+
+We verified the reproduction under guard on Darwin (GCC 16.1.0). We reduced the bug to a 6-line library-free testcase. We recorded Linux (glibc) evidence from the probe logs. See the section "Related reports" below.
 
 Each compile is fast and small. We still ran each compile below under the standard watchdog (`/tmp/buildguard.sh 8192 12288 300 ...`), one compile at a time. The guard never fired.
 
@@ -195,6 +197,56 @@ In the report:
 4. State that the probe originally blamed the GMF `<meta>` include, and that the control run disproved it. Then triagers will not chase the reflection header.
 
 Duplicate check (web + Bugzilla search, 2026-08-11): no existing report combines `-freflection` with this merge failure. PR 122785 (`[Reflection] -freflection and 'import std;' causes 'recursive lazy load'`) is a different symptom in the same flag/modules intersection. It is worth a See Also. PR 98770 (conflicting global module declarations from stdlib headers in two GMFs) is the closest historical modules bug. But it came before reflection, and the GCC developers fixed it.
+
+## Related reports
+
+We verified each reference below on 2026-08-11 against the GCC Bugzilla REST API, the gcc.gnu.org git server, and the gcc-patches archives. A deeper search than the duplicate check above found the defect already on file. This section supersedes that duplicate check.
+
+### The same defect, already filed and fixed upstream
+
+- PR 124582 — `Conflicting imported declaration with both modules and reflection enabled` — this is our defect: the same diagnostic on glibc's `pthread_mutex_t` (a typedef that names an unnamed union), with a GMF include plus a textual include; RESOLVED FIXED, target milestone 16.2.
+- PR 123810 — `internal compiler error: in members_cmp, at cp/reflect.cc:6450` — RESOLVED FIXED; its fix, r16-7903-gf8152db38660 (Jakub Jelinek, 2026-03-05), changed the representation of typedef-named unnamed types, only under `-freflection`; that commit introduced our failure.
+- Root cause, PR 124582 comment 2 (Nathaniel Shead, 2026-03-20): "This was caused by r16-7903-gf8152db38660061623150b346d84765676e92844, reflection now uses a different representation of `typedef struct {} foo;` which modules isn't yet equipped to deal with."
+- Fix commit r17-205-g7802275c29d3 — `c++/modules+reflection: fix merging typedef struct { } A [PR124582]` (Patrick Palka, 2026-04-29) — teaches modules merging the `-freflection` representation, in which the unnamed decl "isn't visible to name lookup but still has the same DECL_NAME as the typedef decl".
+- Backport r16-8841-gfd65d688f7a7 (releases/gcc-16, 2026-04-30) — puts the fix into GCC 16.2; our GCC 16.1.0 predates it, and our local source tree has no `g++.dg/modules/anon-4*` testcase.
+- Testcase `g++.dg/modules/anon-4.h`, added by the fix — starts with `typedef struct { } A;` and has the same shape as our `reduced.h`.
+- PR 124709 — `when "-freflection" is enabled, "import std;" and header includes of std library doesn't compile` — RESOLVED DUPLICATE of PR 124582.
+- PR 125468 — `Compiling with modules and reflection has conflicting declaration` — RESOLVED DUPLICATE of PR 124582.
+- PR 125787 — `[modules] Including headers and using modules with -freflection enabled causes conflicting imported declarations` — RESOLVED DUPLICATE of PR 124582; filed against 16.1.1.
+- Workaround, PR 124582 comment 6 (Patrick Palka): `--compile-std-module` builds `<bits/stdc++.h>` as a header unit; the preprocessor then translates standard-library includes into imports, and this sidesteps the merge failure.
+
+Action: do not file a new report. Verify the reduction against GCC 16.2 or trunk. If the reduction still fails there, reopen PR 124582 and attach `reduced.h`/`reduced-module.cc`/`reduced-main.cc`. Our reduction stays valuable: it is library-free, and the upstream testcase is not.
+
+### Nearby reports in the same machinery
+
+- PR 122774 — `The compiler ICEs when compiling a file that mixes a module import with a traditional header include` — NEW; Andrew Pinski first flagged PR 124582 as a possible duplicate of it; it stayed a separate defect.
+- PR 124200 — `[modules][reflection] members_of does not see members of namespaces provided via modules` — NEW; another open reflection-and-modules interaction defect.
+- PR 118829 — `[modules] ICE in add_indirects emitting template typedef struct` — NEW; an open typedef-struct modules defect without reflection.
+- PR 99208 — `[modules] ICE with partitions & instantiations of linkage-typedef structs` — RESOLVED FIXED (2021); the earliest typedef-for-linkage modules defect.
+- PR 98885 — `[modules] forward declaration of classes prevent them from being exported at the point of actual declaration` — RESOLVED FIXED for GCC 14.
+- PR 102341 — `[modules] "error: conflicting exporting declaration" for anything previously declared` — RESOLVED DUPLICATE of PR 98885.
+- PR 103524 — `[meta-bug] modules issue` — the modules meta-bug; its dependency list contains PR 124582, PR 122785, PR 122774, PR 118829, and our PR 126783.
+- PR 126783 — `[16/17 Regression] [modules] ICE when a GMF variable is later defined inline` — our filing of 2026-08-10; a different defect in the same modules-merging machinery; it blocks PR 103524.
+- PR 122785 — `[Reflection] -freflection and 'import std;' causes 'recursive lazy load' when 'std' module entity used` — RESOLVED FIXED; the one-line description above matches the upstream summary.
+- PR 98770 — `[modules] including certain stdlib headers in the global module fragment of different modules causes conflicting global module declarations` — RESOLVED FIXED; the one-line description above matches the upstream summary.
+
+### Mechanism in the GCC 16.1.0 source
+
+We located the mechanism in our local tree (`/Users/bjorn/finch-gcc16/src/gcc-16.1.0/`). It agrees with the upstream root cause.
+
+- `gcc/cp/decl.cc:13845` (`name_unnamed_type`) — the `flag_reflection` branch at lines 13851-13858 keeps the anonymous `TYPE_DECL` as `TYPE_NAME` and copies the typedef's name onto it (`DECL_NAME (orig) = DECL_NAME (decl)`, line 13856) instead of replacing the decl. r16-7903 added this branch. The branch tests only the flag. Therefore the two sides of an import build different ASTs from the same header text, and the flag on either side breaks the merge.
+- `gcc/cp/module.cc:12069` (`check_mergeable_decl`), `TYPE_DECL` case at lines 12142-12152 — the match logic predates the new representation; the renamed unnamed decl is not visible to name lookup, so the imported class fails to merge with the textual class. r17-205 patches exactly this case.
+- `gcc/cp/module.cc:12547` (`trees_in::is_matching_decl`) — the typedef branch at lines 12707-12711 then fails `same_type_p` on `DECL_ORIGINAL_TYPE`, and line 12712 emits `conflicting imported declaration`.
+
+### gcc-patches record
+
+- The reflection announcement series is `[PATCH 0/9] c++: C++26 Reflection [PR120775]` (Marek Polacek; v1 2025-11-15, v2 2025-12-17, v3 2026-01-14; inbox.sourceware.org).
+- No cover letter calls out module interaction as a risk. The v3 cover letter says only: "The feature is hidden behind -freflection so should not be disruptive." The whole series changes `gcc/cp/module.cc` by 9 lines (META_TYPE streaming only). The option documentation calls the feature "experimental C++26 Reflection".
+- The fix thread is `[PATCH] c++/modules+reflection: fix merging typedef struct { } A [PR124582]` (Patrick Palka, April 2026, gcc-patches message 714795).
+
+### Clean searches
+
+These Bugzilla queries returned no further hits on 2026-08-11: quicksearch `modules mbstate`; quicksearch `modules GMF merge typedef`; summary search `typedef-for-linkage`; summary search `mbstate` (only pre-modules libstdc++ reports, oldest PR 28975). The productive query was the summary substring search `conflicting imported`.
 
 ## Local workaround
 

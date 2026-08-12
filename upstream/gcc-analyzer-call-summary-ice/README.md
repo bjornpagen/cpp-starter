@@ -6,6 +6,7 @@ Status:
 - The reproduction is verified under guard.
 - The root cause is traced to source.
 - The Linux check is complete. The 21-line reduction causes the same ICE on Linux (see the section "Linux check (done)"). The report is ready to file.
+- Trunk check by run: both reproductions ICE on master commit 475e9eff (Linux container build, 2026-08-12).
 
 The ICE is immediate and allocates nothing unusual. But we still ran every compile below under the standard watchdog (`/tmp/buildguard.sh 8192 12288 600 ...`), one compile at a time. The guard never fired.
 
@@ -29,12 +30,13 @@ The analyzed code is valid. The crash comes from analyzer-internal state; it is 
 - GCC 16.1.0, self-built, `/Users/bjorn/.gcc/current`, target `aarch64-apple-darwin24`
 - macOS arm64 (Darwin 24.6.0), Apple Silicon, 96 GB RAM
 - CMake 4.2.1, Ninja 1.13.2 (not used by this reproduction; single-TU compiles only)
-- Current GCC master contains the identical assert and the identical unreconciled `RESULT_DECL` replay path. We read this from the gcc-mirror source on 2026-08-11. We did not run trunk locally.
+- Current GCC master contains the identical assert and the identical unreconciled `RESULT_DECL` replay path. We read this from the gcc-mirror source on 2026-08-11. We then built master commit `475e9efffaf8de781d7e17b687faf1807e104b01` from source on aarch64-linux (container, 2026-08-12) and ran both reproductions there. Both exit 1 with the internal compiler error. The result matrix is at `/Users/bjorn/finch-gcc16/trunkcheck/trunk-matrix.txt`.
 
 ## Files
 
 - `repro.cc` — the 18-line primary reproduction. A helper extracts `std::tuple<int>` from a `std::variant` alternative. Two call sites call the helper. The reproduction needs only the two analyzer flags.
 - `repro-standalone.cc` — the 21-line library-free reduction. Any class with a user-provided copy constructor is sufficient. The reduction needs one extra `--param` to force summarization of the small callee.
+- `ice-full-backtrace.txt` — the complete stderr of the standalone ICE on Darwin. The release-checking build prints a shallow backtrace. This file is the complete output.
 
 ## Reproduction (verified under guard)
 
@@ -156,13 +158,29 @@ File in GCC Bugzilla:
 - Component: `analyzer`
 - Version: `16.1.0`
 - Keywords: `ice-on-valid-code`
+- Known to fail: 16.1.0, 17.0 (master 475e9eff)
 - Title suggestion: `[analyzer] ICE in call_summary_replay::convert_region_from_summary on call summaries for functions returning by invisible reference`
 
-Attach `repro.cc` (primary, flags only). Attach `repro-standalone.cc` (library-free, needs the `--param`). Both bodies are small enough to include inline in the report. State that the assert and the unreconciled `RESULT_DECL` path are unchanged on current master.
+Attach `repro.cc` (primary, flags only). Attach `repro-standalone.cc` (library-free, needs the `--param`). Both bodies are small enough to include inline in the report. State that the assert and the unreconciled `RESULT_DECL` path are unchanged on current master, and that both reproductions ICE by run on master 475e9eff.
 
 Duplicate check: we searched Bugzilla and the web for `convert_region_from_summary`, during the original probe and again on 2026-08-11. The searches found no existing report that names this function or this assert.
 
 The Linux run is complete and confirms the prediction: the crash is target-independent. See the section "Linux check (done)" below for the exact result on both files.
+
+## Related reports (verified 2026-08-11)
+
+We verified each reference below against GCC Bugzilla (REST API) and the gcc-mirror repository. None is a duplicate of this bug. Cite them in the report as follows:
+
+- PR 99390 — the meta-bug tracker for analyzer call summaries (alias `analyzer-call-summaries`). Set `Blocks: 99390` on the new report.
+- PR 107072 — the report that produced the current replay code. Commit r13-3077-gbfca9505f6fce6 (David Malcolm, 2022-10-05, GCC 13) created `call-summary.cc` for it. The first version of the file already contains the unreconciled `RESULT_DECL` case (line 619 there).
+- PR 114473 (RESOLVED FIXED for 13.3/14) — the nearest match. Its fix, r14-9697-gfdd59818e2abf6 (backport r13-8757), is the commit that added the `types_compatible_p` asserts that fire here. That fix added a type cast only for the symbolic-region deref case. The `RESULT_DECL` case received no equivalent cast. The PR 114473 backtrace passes through `convert_region_from_summary`, but its ICE was in `deref_rvalue`. It is a different bug with a different trigger (C, pointer parameter).
+- PR 114798 (UNCONFIRMED, filed 2024-04-22) — a sibling ICE at the companion assert from the same fix (`convert_svalue_from_summary_1`, call-summary.cc:290, GCC 14). The trigger is a C nested function, not a hidden-reference return. Still open; not a duplicate.
+- PR 114159 ([13 Regression]) — a different `-fanalyzer-call-summaries` ICE, in `call_info` (call-info.cc:143). Fixed on trunk by commit c0d8a64e7232 (2024-02-29).
+- PR 114897 (UNCONFIRMED) — an analyzer ICE bisected to the same revamp commit r13-3077. Together with PR 114798, it shows the replay code is a known source of open ICEs.
+- Flag history — the GCC 10.1 manual already documents `-fanalyzer-call-summaries`. The documentation states the two activation conditions (more than one call site, `analyzer-min-snodes-for-call-summary`). It states no limitation about return types.
+- Trunk check — gcc-mirror master at commit `475e9efffaf8de781d7e17b687faf1807e104b01` (fetched 2026-08-11) contains the identical assert and the identical `RESULT_DECL` case. Only the line numbers moved: the assert is at call-summary.cc:538 and the `RESULT_DECL` case is at line 620 on trunk, against 550 and 632 in the 16.1.0 release.
+
+Clean searches, for the duplicate-check record: Bugzilla quicksearch finds no report for `convert_region_from_summary`, `analyzer types_compatible_p`, `analyzer invisible reference`, `analyzer hidden reference`, `analyzer NRV`, or `analyzer return slot`. The only `analyzer RESULT_DECL` hit is PR 95039, an unrelated `dump_expr` wording issue.
 
 ## Linux check (done)
 

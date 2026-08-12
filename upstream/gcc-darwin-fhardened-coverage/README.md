@@ -1,6 +1,6 @@
 # `-fhardened` on aarch64-apple-darwin: unsupported-target warning is unclassifiable, umbrella silently partial
 
-Status: the analysis is complete, and the reproduction is verified. The Linux control is also complete: on aarch64-unknown-linux-gnu (same self-built GCC 16.1.0), `g++ -fhardened -Whardened -O2` compiles with exit 0 and no warning, and `-E -dM` shows `_FORTIFY_SOURCE 3` and `__SSP_STRONG__ 3` defined. The umbrella applies fully on Linux. The report is ready to file.
+Status: the analysis is complete, and the reproduction is verified. The Linux control is also complete: on aarch64-unknown-linux-gnu (same self-built GCC 16.1.0), `g++ -fhardened -Whardened -O2` compiles with exit 0 and no warning, and `-E -dM` shows `_FORTIFY_SOURCE 3` and `__SSP_STRONG__ 3` defined. The umbrella applies fully on Linux. Trunk: the `configure.ac` gate persists on master commit 475e9eff (source check, 2026-08-12). The reports are ready to file.
 
 This is not a memory issue. Each command here compiles a one-line file and completes in less than one second. We still ran all commands under the standard guard (`/tmp/buildguard.sh 8192 12288 600 ...`) to obey house policy. The guard never fired.
 
@@ -118,10 +118,37 @@ The better Darwin fix:
 2. Keep FORTIFY out of the Darwin injection. (The SDK's `!defined (__cplusplus)` gate makes FORTIFY a no-op for C++ in all cases.)
 3. Let `-Whardened` state that FORTIFY is unavailable on this target.
 
+## Related reports
+
+We verified each reference below on 2026-08-11. We used the GCC Bugzilla REST API and the inbox.sourceware.org gcc-patches archive.
+
+- [PR 117967](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=117967) (driver, NEW) — "`-Wno-hardened` does not disable all `-fhardened` warnings". This is the nearest existing report. It covers the class-0 `-fhardened` warning in the driver (`gcc.cc`, link time). Marek Polacek confirms the defect there and quotes the code comment "We can't use OPT_Whardened yet. Sigh." Our defect 3 is the separate class-0 rejection in `cc1` (`toplev.cc`). No existing report covers that instance. Cite PR 117967 in the "See Also" field.
+- [PR 117992](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=117992) (driver, NEW) — `-fhardened` warns about linker hardening options on `--enable-default-pie` builds. Same theme: the umbrella warns where it should stay silent, and the user cannot suppress the warning. It has no target-coverage angle.
+- [PR 117739](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=117739) (driver, RESOLVED FIXED) — `-fhardened -Wl,-z,lazy` still passed `-z now` to the linker. A link-side constituent bug, now fixed. It does not touch the compile-side application order that our defect 2 describes.
+- [PR 122710](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=122710) (driver, UNCONFIRMED) — `-fhardened` breaks `--help=topic` unless a file is passed. An adjacent `-fhardened` driver defect. It is unrelated to target coverage.
+- gcc-patches, ["\[PATCH v4\] gcc: Introduce -fhardened"](https://inbox.sourceware.org/gcc-patches/ZUV5ZDgmrPJlLSdd@redhat.com/) (Marek Polacek, 2023-11-03) — the origin of the `linux*|gnu*` gate. Richard Biener suggested a static target list ("eventually even not support -fhardened for targets not listed"). Marek added `HAVE_FHARDENED_SUPPORT` in response and wrote: "If other OSs want to use -fhardened, they need to update the configure test." So the gate is an explicit invitation to extend, not a rejection of Darwin on merit.
+- Same thread, review of v3 (Richard Biener, 2023-10-19) — the stated design intent: "the default configuration for a target should with -fhardened _not_ have any -Whardened diagnostics". The current Darwin behavior (warn, then half-apply, with no report) contradicts this intent twice.
+- Same thread (Marek Polacek, 2023-10-23) — Darwin went untested, not unsupported by decision. Marek tried compile-farm machine 104 and hit "*** Configuration aarch64-apple-darwin21.6.0 not supported": GCC had no aarch64 Darwin port in 2023. GCC 16 has that port (this report runs on it), so the original reason to defer is gone.
+- gcc-patches, ["\[COMMITTED\] testsuite: i386: Restrict gcc.target/i386/fhardened-1.c etc. to Linux/GNU"](https://inbox.sourceware.org/gcc-patches/ydd7cgzc7e2.fsf@CeBiTec.Uni-Bielefeld.DE/) (Rainer Orth, 2024-04-15) — the `fhardened-1.c`/`fhardened-2.c` tests failed on Solaris/x86 and Darwin/x86 with exactly our diagnostic ("cc1: warning: '-fhardened' not supported for this target"). The fix restricted the tests to Linux/GNU. It did not classify the warning and it did not extend coverage. This is prior on-list evidence that the warning fires on Darwin.
+- gcc-patches, ["\[COMMITTED\] testsuite: i386: Restrict gcc.target/i386/pr124759.c to Linux"](https://inbox.sourceware.org/gcc-patches/yddqzooo95u.fsf@CeBiTec.Uni-Bielefeld.DE/) (Rainer Orth, 2026-04) — the same warning broke another test on Solaris, and the same restriction pattern repeated two years later. The class-0 warning keeps producing testsuite noise on every non-Linux target.
+- Our [PR 126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) ([Darwin] `rsize_t`, target) — our prior Darwin-target report; relevant only as the filing precedent that this entry already cites. Our PRs 126783 and 126786 cover C++ modules and do not relate.
+
+Duplicate searches with no result (GCC Bugzilla quicksearch, 2026-08-11):
+
+- "hardened darwin" — one hit, an unrelated COBOL bug. Nothing on `-fhardened` Darwin coverage.
+- "hardened target" — 20 hits, none about `-fhardened` coverage or the unclassifiable warning.
+- "fhardened bsd" — zero hits.
+- "fhardened musl" — zero hits.
+
+Conclusion of the search: no BSD, musl, Darwin, or other-target report asks for `-fhardened` coverage, and no report covers the `cc1`-side class-0 rejection or the silent partial application. PR 117967 covers only the driver-side sibling of defect 3. This report is not a duplicate.
+
 ## Suggested upstream destination
 
-1. File in GCC Bugzilla: product `gcc`, component `middle-end` (option handling; `-fhardened` lives in the common options machinery — triage may split the Darwin enablement into `target`), version `16.1.0`, keyword `diagnostic`. Title suggestion: `-fhardened on unsupported targets: warning not in -Whardened class (unfixable under -Werror), umbrella applied partially with no per-constituent report`. Attach `hardened.cc` and the verbatim outputs above. Lead with defects 2 and 3, because they are target-independent for each non-`linux*|gnu*` OS. Present the reproduction on `aarch64-apple-darwin24`.
-2. The Darwin enablement itself is a feature gap, not a bug. Send a follow-up `configure.ac` patch to gcc-patches after the Bugzilla report has a PR number to cite. CC the Darwin maintainers, per the `gcc-fixincludes-darwin-rsize-t` precedent. The constituent evidence in `constituents.cc`/`assertions.cc` is the justification. The `_string.h:226` FORTIFY gate is the reason the patch must not inject `_FORTIFY_SOURCE` claims for Darwin C++.
+File TWO Bugzilla reports, per the one-bug-per-report rule in `upstream/SUBMISSION-CHECKLIST.md`. Both defects are target-independent for each non-`linux*|gnu*` OS. Present the reproduction on `aarch64-apple-darwin24`.
+
+1. Report A — the unclassifiable cc1-side warning (defect 3). Product `gcc`, component `middle-end`, version `16.1.0`, keyword `diagnostic`. Title suggestion: `-fhardened 'not supported for this target' warning from cc1 has no warning class; -Wno-hardened and -Wno-error=hardened have no effect`. Body: the three command/output pairs from reproduction section 1 (`-Werror`, `-Wno-error=hardened`, `-Wno-hardened`). Inline `hardened.cc`. Set See Also: PR 117967, the driver-side sibling of this defect, which Marek Polacek confirmed.
+2. Report B — the silent partial application (defect 2). Product `gcc`, component `middle-end`, version `16.1.0`, keyword `diagnostic`. Title suggestion: `-fhardened applied partially after target rejection, with no per-constituent report`. Body: the `-E -dM` macro evidence and the `-Q --help=common` diff from reproduction section 2. Attach `constituents.cc` and `assertions.cc` as constituent-support evidence. Quote Richard Biener's design-intent statement, already cited in "Related reports": "the default configuration for a target should with -fhardened _not_ have any -Whardened diagnostics".
+3. Defect 1 (the enablement gap) is NOT a Bugzilla report. It is the `configure.ac` patch queued in `upstream/TODO.md`. Marek Polacek's statement invites it: "If other OSs want to use -fhardened, they need to update the configure test." Send the patch to gcc-patches after reports A and B have PR numbers to cite. CC the Darwin maintainers, per the `gcc-fixincludes-darwin-rsize-t` precedent. The constituent evidence in `constituents.cc`/`assertions.cc` is the justification. The `_string.h:226` FORTIFY gate is the reason the patch must not inject `_FORTIFY_SOURCE` claims for Darwin C++.
 
 Before you file the report, do these two checks:
 

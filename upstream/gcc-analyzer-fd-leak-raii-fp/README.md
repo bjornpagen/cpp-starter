@@ -1,6 +1,6 @@
 # Analyzer false-positive fd leaks on canonical RAII fd owners
 
-Status: the analysis is complete. We verified the reproduction under the guard. We traced the root causes to source. The Linux check is also complete: defect 1 reproduces on Linux, and defect 2 does not (see the section "Linux check (done)"). The reports are ready to file.
+Status: the analysis is complete. We verified the reproduction under the guard. We traced the root causes to source. The Linux check is also complete: defect 1 reproduces on Linux, and defect 2 does not (see the section "Linux check (done)"). The reports are ready to file. Trunk check by run: defect 1 fires on master commit 475e9eff with identical warning counts. The assumed-not-to-throw list is unchanged there, so defect 2's basis persists.
 
 Each compile below completes immediately and allocates nothing unusual. We still ran each compile under the standard guard (`/tmp/buildguard.sh 8192 12288 600 ...`), one compile at a time. The guard did not fire.
 
@@ -34,7 +34,7 @@ Two independent defects produce the reports:
 - GCC 16.1.0, self-built, `/Users/bjorn/.gcc/current`, target `aarch64-apple-darwin24`
 - macOS arm64 (Darwin 24.6.0), Apple Silicon, 96 GB RAM
 - CMake 4.2.1, Ninja 1.13.2 (not used for this reproduction; the reproduction uses single-TU compiles only)
-- Current GCC master keeps all three implicated code sites unchanged. We read them from a local master checkout at commit `14d1f0c9858` (2026-08-10). We did not run trunk locally.
+- Current GCC master keeps all three implicated code sites unchanged. We read them from a local master checkout at commit `14d1f0c9858` (2026-08-10). We then built master commit `475e9efffaf8de781d7e17b687faf1807e104b01` from source and ran it in a Linux container (aarch64-linux, 2026-08-12). Defect 1 fires there with warning counts identical to 16.1.0: `repro.cc` emits 3 warnings, `repro-minimal.cc` 2, and `repro.c` 1. The assumed-not-to-throw list at that same commit is verbatim unchanged (`"fclose"` only, same TODO). Defect 2 itself triggers only on libcs without nothrow annotations (Darwin), so its trunk claim stays source-verified. The result matrix is at `/Users/bjorn/finch-gcc16/trunkcheck/trunk-matrix.txt`.
 
 ## Files
 
@@ -42,6 +42,7 @@ Two independent defects produce the reports:
 - `repro-minimal.cc` — a 29-line reduction that shows both defects in one TU (2 warnings)
 - `repro.c` — a 17-line plain-C reduction of defect 1 only (1 warning; no C++ anywhere)
 - `analyzer-output.txt` — the complete verbatim output of `g++-16 -O2 -fanalyzer -c repro.cc`, with all three event paths
+- `repro-minimal.ii` — the preprocessed source from the Darwin compile of `repro-minimal.cc`, for the defect-2 report. The defect-2 trigger depends on Apple SDK header annotations, so reviewers without the SDK need this file.
 
 ## Reproduction (verified under guard)
 
@@ -134,7 +135,7 @@ File two Bugzilla reports, because the defects are independent and one is C-scop
 1. GCC Bugzilla, product `gcc`, component `analyzer`, version `16.1.0`, keywords `diagnostic`. Title suggestion: `[analyzer] -Wanalyzer-fd-leak false positive on fd owned by caller through pointer/reference parameter (state purged when loading temporary dies)`. Attach `repro.c` (primary, plain C) and `repro-minimal.cc`. Both are small enough to inline. Point at the `sm_state_map::on_liveness_change` / `initial_svalue::implicitly_live_p` interaction. Note that the sites are unchanged on master.
 2. GCC Bugzilla, product `gcc`, component `analyzer`, version `16.1.0`, keywords `diagnostic`. Title suggestion: `[analyzer] fd/resource leak false positives from assumed-throwing libc calls (close, fcntl) on targets without nothrow header annotations; noexcept destructors not modeled`. Attach `repro-minimal.cc`. Reference the one-entry `get_fns_assumed_not_to_throw` whitelist. Ask whether the analyzer must assume that sm-fd's own known functions do not throw. Ask whether unwinding must stop at noexcept frames. Note `-fanalyzer-assume-nothrow` as the existing blunt workaround.
 
-Duplicate check: on 2026-08-11 we did web searches for the diagnostic shapes (`-Wanalyzer-fd-leak` false positive with struct members / pointer parameters / RAII destructors, and the anchored-at-close shape). The searches found no existing report. GCC Bugzilla's own search UI was unreachable from this network (bot-check interstitial). Thus run a Bugzilla quicksearch for `-Wanalyzer-fd-leak` at filing time.
+Duplicate check: on 2026-08-11 we did web searches for the diagnostic shapes (`-Wanalyzer-fd-leak` false positive with struct members / pointer parameters / RAII destructors, and the anchored-at-close shape). The searches found no existing report. GCC Bugzilla's own search UI was unreachable from this network (bot-check interstitial). Thus run a Bugzilla quicksearch for `-Wanalyzer-fd-leak` at filing time. Update: we completed that search through the Bugzilla REST API on 2026-08-11. The section "Related reports (verified 2026-08-11)" records the results. No existing report covers either defect.
 
 Linux check (done): we compiled `repro-minimal.cc` on aarch64-unknown-linux-gnu (same
 self-built GCC 16.1.0, Debian trixie, glibc headers), at `-O0` and at `-O2`. The result
@@ -152,6 +153,33 @@ separates the two defects cleanly:
 
 The full Linux diagnostic output is preserved at
 `/Users/bjorn/finch-gcc16/fdleak-linux-full.txt` (not part of this repository).
+
+## Related reports (verified 2026-08-11)
+
+We verified every reference below against the GCC Bugzilla REST API (`gcc.gnu.org/bugzilla/rest/bug`), the gcc-mirror GitHub tree, inbox.sourceware.org, and gcc.gnu.org/gcc-16/changes.html on 2026-08-11. We read the comment history of each bug. Cite these in the two filings. Each line states what the reference covers and how our defect differs.
+
+Reports related to defect 1 (state purge on caller-owned fds):
+
+- PR 114677 (`gcc.gnu.org/bugzilla/show_bug.cgi?id=114677`, NEW, "[13/14/15/16/17 Regression] -Wanalyzer-fd-leak false positive writing to int * param") — the nearest neighbor: the function creates an fd and stores it through an `int *` out-parameter, and David Malcolm confirmed that "the analyzer isn't treating (*sock) as keeping the value of the fd alive"; our defect is the load direction — the caller already owns the fd in a struct member, the analyzed function only reads it through the parameter, and the purge fires when the loading temporary dies, so the report anchors at the callsite itself. Cite this PR in report 1 as related, not duplicate.
+- PR 108648 (`show_bug.cgi?id=108648`, UNCONFIRMED, "-Wanalyzer-fd-leak false positives seen on haproxy's proto_tcp.c") — the same shape in the wild: fds in struct members reached through pointer parameters, sm-state set via `listen`; the reproducer is large (a whole extracted file with inline asm) and the bug has no root-cause analysis; our report adds the 17-line reduction and the exact purge mechanism. Cite this PR in report 1 as a probable field sighting of the same defect.
+- PR 108252 (`show_bug.cgi?id=108252`, fix committed as r13-5113-g688fc162b76dc6, "analyzer: fix leak false positives on `*UNKNOWN = PTR;`") — the store-through-parameter side of the same family, fixed in GCC 13; the fix covers stores to unknown pointers and does not cover our load-side liveness purge. Cite it to show that the store direction got a fix and the load direction did not.
+- PR 109839 (`show_bug.cgi?id=109839`, UNCONFIRMED, "-Wanalyzer-fd-leak false positive with routine dup2") — a different mechanism (missing modeling of `dup2` onto standard fds); it shows only that sm-fd false positives recur; do not conflate it with ours.
+- PR 97110 (`show_bug.cgi?id=97110`, NEW, "[meta-bug] tracker bug for supporting C++ in -fanalyzer") — the tracker under which triage files C++-specific analyzer issues; `repro.c` keeps defect 1 outside this tracker's scope, so report 1 must not be blocked on PR 97110. State this in report 1 explicitly.
+
+Reports and history related to defect 2 (assumed-throwing external calls):
+
+- PR 97111 (`show_bug.cgi?id=97111`, ASSIGNED, "Support for exception-handling within -fanalyzer") — the feature tracker; the implementation landed as commit r16-264-g7a39e0ca0652ff, "analyzer: initial implementation of exception handling [PR97111]". Cite it as the origin of the behavior.
+- PR 122623 (`show_bug.cgi?id=122623`, RESOLVED FIXED, "[16 Regression] Possible regression in analyzer signal:noise when compiling C code with -fexceptions") — the closest existing report: David Malcolm filed it after Fedora package scans showed new leak warnings from unannotated C headers under distro `-fexceptions`; the resolution added only the opt-out flag (r16-7080-gf1318516f0745, "analyzer: add option -fanalyzer-assume-nothrow [PR122623]", 2026-01-27). Our defect differs in three ways: default-flags C++ (no distro flag needed), a destructor that is implicitly `noexcept` (so the report is unactionable even under the throwing premise), and the still-one-entry whitelist. The flag is a workaround, not a fix — PR 122623 leaves both gaps open.
+- gcc-patches thread for that flag (`inbox.sourceware.org/gcc-patches/20260127001912.3399141-1-dmalcolm@redhat.com/`) — the author writes: "I am worried that the C++ exception support added in GCC 16 could cause a big regression in analyzer signal:noise when compiling C code with distro build flags." Quote this in report 2: our report shows the same regression on default-flags C++, which the thread does not cover.
+- PR 110172 (`show_bug.cgi?id=110172`, UNCONFIRMED, "Leak false positives from -fanalyzer with -fexceptions (even on C code)") — a 2023 precursor from CFG EH edges (before GCC 16 modeling), against `vfprintf`; the discussion argued the warning is arguably true on glibc because of cancellation; our case has no such escape — a throw through the `noexcept` destructor can only reach `std::terminate`. Cite it as prior art for the "unannotated libc call assumed to throw" pattern.
+- GCC 16 release notes (`gcc.gnu.org/gcc-16/changes.html`) — verbatim: "With the added support for exception-handling, -fanalyzer assumes that a call to an external function not marked with attribute nothrow could throw an exception if -fexceptions is enabled. GCC 16 adds a new option -fanalyzer-assume-nothrow, for disabling this assumption." The notes also say the analyzer "is now usable on simple C++ examples". Quote both sentences in report 2.
+- Trunk state of the whitelist — we fetched `gcc/analyzer/region-model.cc` from gcc-mirror master on 2026-08-11: `get_fns_assumed_not_to_throw` (trunk lines 2182–2193) still contains exactly one entry, `"fclose"`, under the same `// TODO: populate this list more fully`. State in report 2 that trunk has not grown the list.
+
+Clean-search notes (searches that returned no relevant report, run 2026-08-11):
+
+- Quicksearch `fanalyzer-assume-nothrow`: 0 bugs. Quicksearch `analyzer RAII destructor`: 0 bugs. Quicksearch `Wanalyzer-fd-leak struct member`: 0 bugs.
+- Quicksearch `Wanalyzer-fd-leak` (12 bugs) and `analyzer destructor` (6 bugs): no hit beyond the ones cited above; none covers a state purge on a dead loading temporary.
+- Quicksearch `analyzer noexcept` (12 bugs) and `analyzer terminate` (5 bugs): no report covers unwinding through a `noexcept` frame or modeling of `std::terminate`. Both gaps in report 2 are unreported.
 
 ## Local workaround
 

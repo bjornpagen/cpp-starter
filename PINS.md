@@ -79,8 +79,11 @@ top-level CMake dependency declaration.
   native senders on every toolchain bump; once available, the backend re-binds
   `namespace ex` to `std::execution`, the FetchContent pin is deleted, and
   everything upward is untouched
-- upstream: filed on Bugzilla 2026-08-10; the reproduction directory
-  (`gcc-ice-gmf-consteval-redecl`, 4-line repro, no consteval needed) was
+- upstream: filed 2026-08-10 as PR c++/126783 ("[16/17 Regression] [modules]
+  ICE when a GMF variable is later defined inline"). Bugzilla marks it
+  ice-on-valid-code, a 15.2→16 regression (See Also PR 122551, whose fix
+  introduced the crashing transfer_defining_module path), blocking the
+  c++-modules meta-bug, milestone 16.3. The reproduction directory was
   removed from the tree after filing — recover from git history before
   commit `e0a9d27` if needed
 

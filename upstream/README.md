@@ -1,6 +1,10 @@
 # GCC submission queue
 
-The queue has six entries. Five entries are verified and ready to file. One entry
+The queue has six entries. Three entries produce five new Bugzilla reports: one
+analyzer ICE report, two analyzer fd-leak reports, and two `-fhardened` reports.
+One entry produces two comments on existing reports (GCC PR 82005 and
+llvm-project issue #102965), plus one Apple Feedback after. One entry is retired:
+upstream already fixed its defect as PR 124582 for GCC 16.2. One entry
 is reopened for patch rework. We submitted the previously filed material (GMF
 variable ICE, silent empty `std` module, two Bugzilla comments) on 2026-08-10.
 Then we removed that material from the tree. If a maintainer asks for that
@@ -25,15 +29,17 @@ The public mailing-list archive keeps your name, email address, and message perm
 
 | Directory | Action | Status |
 |---|---|---|
-| `gcc-lto-modules-debug-oom` | File one report against the Darwin target side of debug emission. File one Apple Feedback (dsymutil) after the GCC PR exists. | Ready — Linux control done: ELF fat LTO objects verify clean, Mach-O only |
-| `gcc-darwin-fhardened-coverage` | File one `middle-end` report. Send one `configure.ac` Darwin-enablement patch after. | Ready — the umbrella is Linux-only by GCC's own configure |
-| `gcc-analyzer-call-summary-ice` | File one `analyzer` report. | Ready — the 21-line reduction ICEs on Linux too; cross-platform |
-| `gcc-analyzer-fd-leak-raii-fp` | File two `analyzer` reports. | Ready — defect 1 reproduces on Linux; defect 2 occurs only on libcs without nothrow annotations |
-| `gcc-modules-freflection-typedef-merge` | File one `c++` report (`rejects-valid`, See Also PR 122785). | Ready — 6-line reduction, fails against both glibc and Apple SDK headers |
+| `gcc-lto-modules-debug-oom` | Comment on PR 82005 + comment on llvm-project #102965 + Apple Feedback after. | Ready to comment — Linux control done: ELF fat LTO objects verify clean, Mach-O only |
+| `gcc-darwin-fhardened-coverage` | File two reports (warning class; silent partial application); enablement patch queued in `TODO.md`. | Ready — the umbrella is Linux-only by GCC's own configure; the gate persists on master 475e9eff |
+| `gcc-analyzer-call-summary-ice` | File one `analyzer` report, Blocks: 99390. | Ready — trunk-run confirmed: both reproductions ICE on master 475e9eff; cross-platform |
+| `gcc-analyzer-fd-leak-raii-fp` | File two `analyzer` reports. | Ready — defect 1 confirmed by run on master 475e9eff with identical counts; defect 2 occurs only on libcs without nothrow annotations, and its basis persists on master |
+| `gcc-modules-freflection-typedef-merge` | DO NOT FILE — fixed upstream as PR 124582 (16.2); entry retained as record. | Retired — all four reproduction compiles exit 0 on master 475e9eff |
 | `gcc-fixincludes-darwin-rsize-t` | Write the replacement patch: `__need_rsize_t` in GCC `<stddef.h>` (PR target/126782, comments 3–5). Then the Apple report. | Reopened — fixincludes approach rejected by maintainer feedback; see the entry's `SUBMIT.md` work plan |
 
 The `README.md` of each entry contains the exact commands, the verbatim output, the
 environment tuple, the analysis, and the suggested Bugzilla component and title.
+`ENVIRONMENT-gcc-v.txt` in this directory holds the verbatim `g++-16 -v` output.
+Paste it into the body of every report; the policy requires it in each one.
 
 DANGER — this warning applies only to `gcc-lto-modules-debug-oom`. Run its
 reproduction only under the memory guard that the entry documents. An unguarded run
