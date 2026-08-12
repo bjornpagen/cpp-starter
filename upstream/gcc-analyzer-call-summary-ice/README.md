@@ -7,6 +7,7 @@ Status:
 - The root cause is traced to source.
 - The Linux check is complete. The 21-line reduction causes the same ICE on Linux (see the section "Linux check (done)"). The report is ready to file.
 - Trunk check by run: both reproductions ICE on master commit 475e9eff (Linux container build, 2026-08-12).
+- Official-image check by run: both reproductions ICE with exit 1 on the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12) — including the primary `repro.cc`, which the self-built Linux 16.1.0 compiled clean. This closes the "unofficial self-built compiler" objection: self-built Darwin, self-built Linux, the official image, and self-built master all show the bug.
 
 The ICE is immediate and allocates nothing unusual. But we still ran every compile below under the standard watchdog (`/tmp/buildguard.sh 8192 12288 600 ...`), one compile at a time. The guard never fired.
 
@@ -31,12 +32,14 @@ The analyzed code is valid. The crash comes from analyzer-internal state; it is 
 - macOS arm64 (Darwin 24.6.0), Apple Silicon, 96 GB RAM
 - CMake 4.2.1, Ninja 1.13.2 (not used by this reproduction; single-TU compiles only)
 - Current GCC master contains the identical assert and the identical unreconciled `RESULT_DECL` replay path. We read this from the gcc-mirror source on 2026-08-11. We then built master commit `475e9efffaf8de781d7e17b687faf1807e104b01` from source on aarch64-linux (container, 2026-08-12) and ran both reproductions there. Both exit 1 with the internal compiler error. The result matrix is at `/Users/bjorn/finch-gcc16/trunkcheck/trunk-matrix.txt`.
+- We repeated the reproduction on the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12): both files ICE with exit 1, the testcase compiles clean there under `-Wall -Wextra` without `-fanalyzer` (the user-error check per GCC bug policy: recorded, passed), and the official-build preprocessed source is attached as `ice-repro.official.ii`. The result matrix and logs are at `/Users/bjorn/finch-gcc16/official/`.
 
 ## Files
 
 - `repro.cc` — the 18-line primary reproduction. A helper extracts `std::tuple<int>` from a `std::variant` alternative. Two call sites call the helper. The reproduction needs only the two analyzer flags.
 - `repro-standalone.cc` — the 21-line library-free reduction. Any class with a user-provided copy constructor is sufficient. The reduction needs one extra `--param` to force summarization of the small callee.
 - `ice-full-backtrace.txt` — the complete stderr of the standalone ICE on Darwin. The release-checking build prints a shallow backtrace. This file is the complete output.
+- `ice-repro.official.ii` — the preprocessed source of `repro.cc` from the official Docker `gcc:16.1.0` image (aarch64-linux), for the Bugzilla attachment.
 
 ## Reproduction (verified under guard)
 

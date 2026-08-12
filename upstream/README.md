@@ -40,6 +40,9 @@ The `README.md` of each entry contains the exact commands, the verbatim output, 
 environment tuple, the analysis, and the suggested Bugzilla component and title.
 `ENVIRONMENT-gcc-v.txt` in this directory holds the verbatim `g++-16 -v` output.
 Paste it into the body of every report; the policy requires it in each one.
+`EVIDENCE-ARCHIVE.md` catalogs every off-repository artifact under
+`/Users/bjorn/finch-gcc16/`, and `buildguard.sh` (copied here from `/tmp`) is
+the memory watchdog that every reproduction must run under.
 
 DANGER — this warning applies only to `gcc-lto-modules-debug-oom`. Run its
 reproduction only under the memory guard that the entry documents. An unguarded run

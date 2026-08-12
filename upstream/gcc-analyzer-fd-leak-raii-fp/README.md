@@ -1,6 +1,6 @@
 # Analyzer false-positive fd leaks on canonical RAII fd owners
 
-Status: the analysis is complete. We verified the reproduction under the guard. We traced the root causes to source. The Linux check is also complete: defect 1 reproduces on Linux, and defect 2 does not (see the section "Linux check (done)"). The reports are ready to file. Trunk check by run: defect 1 fires on master commit 475e9eff with identical warning counts. The assumed-not-to-throw list is unchanged there, so defect 2's basis persists.
+Status: the analysis is complete. We verified the reproduction under the guard. We traced the root causes to source. The Linux check is also complete: defect 1 reproduces on Linux, and defect 2 does not (see the section "Linux check (done)"). The reports are ready to file. Trunk check by run: defect 1 fires on master commit 475e9eff with identical warning counts. The assumed-not-to-throw list is unchanged there, so defect 2's basis persists. Official-image check by run: the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12) reproduces defect 1 with identical warning counts (`repro.cc` 3, `repro-minimal.cc` 2, `repro.c` 1), which closes the "unofficial self-built compiler" objection — self-built Darwin, self-built Linux, the official image, and self-built master all agree.
 
 Each compile below completes immediately and allocates nothing unusual. We still ran each compile under the standard guard (`/tmp/buildguard.sh 8192 12288 600 ...`), one compile at a time. The guard did not fire.
 
@@ -35,6 +35,7 @@ Two independent defects produce the reports:
 - macOS arm64 (Darwin 24.6.0), Apple Silicon, 96 GB RAM
 - CMake 4.2.1, Ninja 1.13.2 (not used for this reproduction; the reproduction uses single-TU compiles only)
 - Current GCC master keeps all three implicated code sites unchanged. We read them from a local master checkout at commit `14d1f0c9858` (2026-08-10). We then built master commit `475e9efffaf8de781d7e17b687faf1807e104b01` from source and ran it in a Linux container (aarch64-linux, 2026-08-12). Defect 1 fires there with warning counts identical to 16.1.0: `repro.cc` emits 3 warnings, `repro-minimal.cc` 2, and `repro.c` 1. The assumed-not-to-throw list at that same commit is verbatim unchanged (`"fclose"` only, same TODO). Defect 2 itself triggers only on libcs without nothrow annotations (Darwin), so its trunk claim stays source-verified. The result matrix is at `/Users/bjorn/finch-gcc16/trunkcheck/trunk-matrix.txt`.
+- We repeated the reproduction on the official Docker `gcc:16.1.0` image (aarch64-linux, 2026-08-12): the warning counts are identical (3/2/1), all three testcases compile clean there under `-Wall -Wextra` without `-fanalyzer` (the user-error check per GCC bug policy: recorded, passed), and the official-build preprocessed sources are attached as `fd-repro.official.i` and `fd-minimal.official.ii`. The result matrix and logs are at `/Users/bjorn/finch-gcc16/official/`.
 
 ## Files
 
@@ -42,7 +43,11 @@ Two independent defects produce the reports:
 - `repro-minimal.cc` — a 29-line reduction that shows both defects in one TU (2 warnings)
 - `repro.c` — a 17-line plain-C reduction of defect 1 only (1 warning; no C++ anywhere)
 - `analyzer-output.txt` — the complete verbatim output of `g++-16 -O2 -fanalyzer -c repro.cc`, with all three event paths
+- `analyzer-output-defect1.txt` — the two defect-1 event paths from that output (the caller-owned listener at `repro.cc:65` and at `repro.cc:77`), split out verbatim for the defect-1 filing
+- `analyzer-output-defect2.txt` — the one defect-2 event path from that output (the `descriptor.Fd::value_` report whose path contains `if 'int fcntl(int, int, ...)' throws an exception...`), split out verbatim for the defect-2 filing
 - `repro-minimal.ii` — the preprocessed source from the Darwin compile of `repro-minimal.cc`, for the defect-2 report. The defect-2 trigger depends on Apple SDK header annotations, so reviewers without the SDK need this file.
+- `fd-repro.official.i` — the preprocessed source of `repro.c` from the official Docker `gcc:16.1.0` image (aarch64-linux), for the defect-1 Bugzilla attachment
+- `fd-minimal.official.ii` — the preprocessed source of `repro-minimal.cc` from the same official image, for the Bugzilla attachment
 
 ## Reproduction (verified under guard)
 

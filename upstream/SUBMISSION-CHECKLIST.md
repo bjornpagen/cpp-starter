@@ -258,3 +258,34 @@ General rules for every report:
 - `mr.cc`, `main_refl.cc` — real-world form, two separate text files
 - Body: exact compile order for both forms; the Darwin and glibc diagnostics;
   the `<meta>`-hypothesis refutation; See Also PR 122785
+
+## 5. Deltas required by the gcc-submission skill
+
+The skill adds five requirements on top of the policy checklist above.
+
+**(a) Private-vs-public separation.** Every entry `README.md` is the PRIVATE
+research record. Draft the public Bugzilla text fresh for each report. The
+public text is plain text only: no Markdown tables, no code fences, no bold,
+no headings. Use functional labels only: `Testcase:`, `Command:`,
+`Compiler output:`, `Expected result:`, `Versions tested:`, `Environment:`.
+Keep the prose under about 1500 characters. Do not carry the Analysis,
+Related-reports, or Design sections into the public text. The nearest related
+PR gets one sentence.
+
+**(b) Official-build status per report.** The analyzer ICE report (C) and both
+fd-leak reports (D, E) are verified on the official Docker `gcc:16.1.0` image
+(aarch64-linux); state that in each. The fhardened reports (B) and the lto-oom
+comment (A) are Darwin-only, and no official Darwin GCC builds exist. Record
+that concrete reason in those artifacts instead.
+
+**(c) Duplicate-search status.** REST-API sweeps are recorded per entry, with
+the search terms and dates. A real-browser re-check remains for the filing
+agent, per GCC policy.
+
+**(d) Multi-file justification for the lto-oom comment.** Include this one
+sentence in the PR 82005 comment: named modules require separate translation
+units, and the static archive is itself the trigger, so the reproduction
+cannot collapse into a single file.
+
+**(e) Approval gate.** Every public artifact needs the user's approval of the
+exact final text, fields, and attachments before submission.
