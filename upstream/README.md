@@ -14,8 +14,7 @@ Use these files as the control documents:
   evidence.
 - `ENVIRONMENT-gcc-v.txt` contains the recorded GCC 16.1.0 configuration.
 - [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/) is the
-  only in-tree investigation: PR 126782, `__need_rsize_t`. Start at
-  [`LOCAL-AGENT-HANDOFF.md`](gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md).
+  gcc-patches packet for PR 126782.
 
 ## Public submission rule
 

@@ -158,19 +158,17 @@ top-level CMake dependency declaration.
   macOS toolchain issues": drop a plain-typedef copy of `_rsize_t.h` into
   GCC's `include-fixed/sys/_types/` and rebuild libstdc++; verify
   `include/c++/<ver>/bits/std.cc` is ~113 KB, not 1 byte
-- workaround: the local fixinclude above (`upstream/
-  gcc-fixincludes-darwin-rsize-t/fixed-header.h` is the production copy;
-  the upstream patch rewrites the guard instead)
-- retire: when the fixincludes patch lands in the pinned GCC (and the
+- workaround: drop a plain-typedef `_rsize_t.h` into the pinned GCC's
+  `include-fixed/sys/_types/` and rebuild libstdc++; verify
+  `include/c++/<ver>/bits/std.cc` is ~113 KB, not 1 byte. That local
+  header is toolchain state, not an in-tree file
+- retire: when `__need_rsize_t` support lands in the pinned GCC (and the
   silent-empty-fallback report is resolved, so a failed std-module build
   can no longer masquerade as success)
 - upstream: filed 2026-08-10 as PR target/126782 (See Also PR 116827); the
-  silent empty-module fallback is filed separately as PR 126786
-  (corroboration Homebrew/homebrew-core#289142). Maintainer feedback on the
-  PR rejects the fixincludes approach for Darwin; the replacement patch adds
-  `__need_rsize_t` support to GCC's `<stddef.h>` — plan and superseded patch
-  in `upstream/gcc-fixincludes-darwin-rsize-t/`. The live local fixinclude
-  remains `fixed-header.h` in that directory until the upstream fix lands
+  silent empty-module fallback is filed separately as PR 126786.
+  Maintainer feedback rejects Darwin fixincludes. The replacement patch
+  is `upstream/gcc-fixincludes-darwin-rsize-t/`
 
 ## gcc-darwin-lto-debug-dsymutil
 

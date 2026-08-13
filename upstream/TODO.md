@@ -5,13 +5,11 @@ report status is in [`BUGS.md`](BUGS.md).
 
 ## Now
 
-1. Investigate `__need_rsize_t` support for PR 126782.
-   - Start with
-     [`gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md`](gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md).
-   - Replace the superseded Darwin fixincludes design.
-   - Implement only the explicit `__need_rsize_t` protocol in the first patch.
-   - Add a regression test.
-   - Run the exact patch on Linux and macOS before preparing a patch email.
+1. PR 126782 private packet is ready.
+   - Review [`gcc-fixincludes-darwin-rsize-t/0001-stddef.h-Support-explicit-__need_rsize_t-PR-target-126782.patch`](gcc-fixincludes-darwin-rsize-t/0001-stddef.h-Support-explicit-__need_rsize_t-PR-target-126782.patch)
+     and [`COMMIT-MESSAGE.txt`](gcc-fixincludes-darwin-rsize-t/COMMIT-MESSAGE.txt).
+   - Do not mail gcc-patches, comment on Bugzilla, or add `Signed-off-by`
+     until the exact public artifact and legal route are approved.
 
 ## Next
 
