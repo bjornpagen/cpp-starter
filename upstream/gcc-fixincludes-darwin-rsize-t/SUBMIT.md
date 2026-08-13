@@ -17,8 +17,9 @@ patch. The patch is not ready to send.
    `cp_feature_table`, because the feature test is Clang-specific and the macOS SDK
    uses it to mean "is Clang". On trunk, the SDK takes its plain-typedef branch and
    the original symptom is gone. The `releases/gcc-16` branch still claims the
-   feature. We do not request a backport. The patch below stands on C11 Annex K
-   conformance and Clang protocol parity.
+   feature. We do not request a backport. The first patch must stand on support
+   for the explicit `__need_rsize_t` protocol. Do not present it as a trunk fix
+   for the original Darwin symptom.
 3. The SDK guard family: `rsize_t` is the only missing typedef in GCC's `__need_*`
    protocol. The SDK also requests `__need_offsetof` (GCC has no such protocol) and
    `__need_va_list` (GCC's `stdarg.h` only knows the spelling `__need___va_list`).
@@ -35,7 +36,7 @@ patch. The patch is not ready to send.
 6. glibc and musl define `rsize_t` nowhere (both rejected Annex K; see WG14 N1967).
    The typedef appears only on request, so the patch changes nothing for them.
 
-## Design
+## Proposed first patch
 
 Touch only `gcc/ginclude/stddef.h` plus tests. Do not touch fixincludes, the Darwin
 driver, or `stdint-gcc.h` (`RSIZE_MAX` belongs to the C library; the SDK's
@@ -45,24 +46,17 @@ driver, or `stdint-gcc.h` (`RSIZE_MAX` belongs to the C library; the SDK's
    top of the file). Add `!defined(__need_rsize_t)` to the "whole job" check, so a
    partial request does not set `_STDDEF_H`.
 2. Insert a new per-type section directly after the `size_t` section, in the file's
-   exact idiom (guard, define, typedef, undef):
+   exact idiom. This is a design sketch. Check current trunk before using it:
 
 ```c
-/* ISO C11 Annex K (K.3.3) restricted-size type.  Define it when explicitly
-   requested via __need_rsize_t (as macOS SDK headers do), or on a full
-   inclusion when the user has requested the C11 Annex K interfaces with
-   __STDC_WANT_LIB_EXT1__ (matching clang's <stddef.h>).  Only the typedef
-   is provided here; RSIZE_MAX and the bounds-checked functions are the
-   C library's responsibility.  */
-#if defined (__need_rsize_t) \
-    || (defined (_STDDEF_H) \
-	&& defined (__STDC_WANT_LIB_EXT1__) && __STDC_WANT_LIB_EXT1__ >= 1)
+/* Define the restricted-size type when a system header requests it.  */
+#if defined (__need_rsize_t)
 #ifndef _RSIZE_T	/* in case the OS headers have defined it.  */
 #define _RSIZE_T
 typedef __SIZE_TYPE__ rsize_t;
 #endif /* _RSIZE_T */
 #undef __need_rsize_t
-#endif /* _STDDEF_H with Annex K, or __need_rsize_t.  */
+#endif /* __need_rsize_t */
 ```
 
 3. The guard choice is `_RSIZE_T`, deliberately: it matches Clang's helper and the
@@ -71,6 +65,16 @@ typedef __SIZE_TYPE__ rsize_t;
    no PR-116827-style undef in the `__APPLE__` block.
 4. Reviewers expect a clear explanatory comment (the one review comment on the
    PR 116827 patch asked for exactly that).
+5. Do not add the full-inclusion `__STDC_WANT_LIB_EXT1__` path in the first patch.
+   That is a separate conformance question with a larger namespace effect.
+
+## Deferred design question
+
+Clang also defines `rsize_t` during a full `<stddef.h>` inclusion when
+`__STDC_WANT_LIB_EXT1__ >= 1`. That behavior might be a useful follow-up. It is
+not required to support a system header that explicitly defines
+`__need_rsize_t`. Research and review it separately. Do not expand the first
+patch merely to match all Clang behavior.
 
 ## Testsuite shape (target-independent; no SDK dependence)
 
@@ -79,21 +83,20 @@ typedef __SIZE_TYPE__ rsize_t;
    of `size_t` gets `dg-error` (the partial include did not do the whole job).
 2. `gcc.dg/stddef-need-rsize-2.c` — full include first, then the need-macro dance
    again (models the SDK's `sys/types.h` ordering): `rsize_t` must still appear.
-3. `gcc.dg/c11-stddef-rsize-1.c` — `__STDC_WANT_LIB_EXT1__ 1` plus full include
-   gives `rsize_t`; the sibling test without the macro gets `dg-error` on `rsize_t`
-   (no namespace pollution — reviewers will ask).
-4. A `g++.dg` copy of test 1; the real-world trigger is C++ `-fmodules`.
+3. A repeated-request or include-order test that follows current `<stddef.h>`
+   testsuite conventions.
+4. A `g++.dg` copy only if current testsuite practice requires separate C++
+   coverage.
+5. Do not add a full-inclusion Annex K test unless the patch also adds that
+   behavior.
 
 ## Known review risks
 
-- "Why, now that trunk does not claim `feature(modules)`?" — answer: Annex K
-  conformance and Clang `<stddef.h>` protocol parity; system headers already speak
-  this protocol, independent of any feature predicate.
-- Pollution objection: `rsize_t` under `__STDC_WANT_LIB_EXT1__` on glibc/musl is
-  conforming (implementation-defined when `__STDC_LIB_EXT1__` is absent) and guarded
-  by `_RSIZE_T`. Fallback position if a reviewer objects: drop the
-  `__STDC_WANT_LIB_EXT1__` half and support only `__need_rsize_t` — that alone
-  covers the SDK protocol.
+- "Why, now that trunk does not claim `feature(modules)`?" — answer: system
+  headers use GCC's selective `<stddef.h>` protocol directly. The patch adds one
+  missing explicit request. It does not restore the obsolete trunk trigger.
+- Scope objection: keep the patch limited to an explicit request. Do not rely on
+  broad Annex K conformance or namespace arguments.
 - This file is generic, not Darwin-local, so it needs a global reviewer (Jason
   Merrill and Joseph Myers are the natural choices). The PR 116827 patch waited 2.5
   weeks with two pings; plan for that.
@@ -102,7 +105,7 @@ typedef __SIZE_TYPE__ rsize_t;
 
 1. Make sure the subject line contains `[PR target/126782]`. Make sure the ChangeLog
    contains `PR target/126782`.
-2. Keep the `Signed-off-by` line (DCO).
+2. Confirm the legal contribution route before adding any `Signed-off-by` line.
 3. Run the GCC commit checker. Run the style checker.
 4. Apply the patch to a clean current-master worktree.
 5. Send the patch to `gcc-patches@gcc.gnu.org` as plain text or a `text/x-patch`

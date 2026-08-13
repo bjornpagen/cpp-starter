@@ -6,10 +6,12 @@ report status is in [`BUGS.md`](BUGS.md).
 ## Now
 
 1. Investigate `__need_rsize_t` support for PR 126782.
+   - Start with
+     [`gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md`](gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md).
    - Replace the superseded Darwin fixincludes design.
-   - Implement the smallest change in `gcc/ginclude/stddef.h`.
+   - Implement only the explicit `__need_rsize_t` protocol in the first patch.
    - Add a regression test.
-   - Run the required GCC tests before preparing a patch email.
+   - Run the exact patch on Linux and macOS before preparing a patch email.
 2. Monitor PR 126783.
    - Patrick Palka confirmed the regression range and accepted the assignment.
    - Do not duplicate the assigned work.
