@@ -1,6 +1,7 @@
 export module starter:net;
 
 import std;
+import :handle;
 import :http;
 
 extern "C++" {
@@ -23,6 +24,8 @@ using RawHandler = std::optional<std::size_t> (*)(std::string_view request, std:
 [[nodiscard]] auto connection_capacity() noexcept -> std::size_t;
 
 [[nodiscard]] auto timeout_capacity() noexcept -> std::chrono::milliseconds;
+
+[[nodiscard]] auto handle_index_width() noexcept -> std::uint64_t;
 
 [[nodiscard]] auto server_open(std::uint16_t port, std::size_t connection_count, std::chrono::milliseconds request_timeout,
                                std::chrono::milliseconds response_timeout) noexcept -> std::expected<ServerOwner, WireError>;
@@ -175,6 +178,7 @@ export [[nodiscard]] auto open_http(HttpServerConfig config) -> std::expected<Ht
 	contract_assert(net_backend::buffer_capacity() == max_response_bytes);
 	contract_assert(net_backend::connection_capacity() == max_connection_count);
 	contract_assert(net_backend::timeout_capacity() == std::chrono::duration_cast<std::chrono::milliseconds>(max_server_timeout));
+	contract_assert(net_backend::handle_index_width() == handle_index_bits);
 	auto opened = net_backend::server_open(config.port, config.max_connections, config.request_timeout, config.response_timeout);
 	if (!opened) {
 		return std::unexpected(net_detail::lift_error(opened.error()));

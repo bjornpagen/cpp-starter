@@ -11,6 +11,7 @@ target_sources(starter_module
 			starter.cc
 			core.cc
 			enums.cc
+			handle.cc
 			http.cc
 )
 

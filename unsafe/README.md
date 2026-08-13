@@ -16,15 +16,17 @@ Rules:
 
 ## Network backend
 
-`net.backend.cc` is the Darwin syscall adapter. `net.cc` exports the safe
-`starter:net` partition.
+`net.cc` exports the safe `starter:net` partition. `net.loop.cc` is the
+owner-driven state machine. CMake selects exactly one wait backend:
+`net.darwin.cc` (`kevent64`) or `net.linux.cc` (`epoll` + `signalfd` +
+`timerfd`). Dialect modules and the loop contain no platform test.
 
-The server has one owner thread and one `kevent64` loop. A fixed-capacity slot
+The server has one owner thread and one wait loop. A fixed-capacity slot
 array owns all active connections; configuration selects an active prefix.
 Each slot contains a closed state variant, its descriptor, fixed
 request/response buffers, progress counters, an absolute deadline, and a
-generation. Kernel events contain only an encoded
-`{slot, generation}` integer. Closing or expiring a slot advances its
+generation. Kernel events contain only an encoded `ConnectionHandle`
+(`{slot, generation}` integer). Closing or expiring a slot advances its
 generation, so a queued stale event cannot name the new occupant.
 
 The loop processes signal events before ordinary readiness, expires absolute

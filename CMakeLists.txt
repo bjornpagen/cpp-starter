@@ -4,14 +4,10 @@ if(NOT CMAKE_GENERATOR STREQUAL "Ninja")
 	message(FATAL_ERROR "Ninja is the only supported generator (got ${CMAKE_GENERATOR})")
 endif()
 
-# On a fresh configure CMAKE_MAKE_PROGRAM is unset until project(); resolve it
-# here so the version gate below works on first run, not only on reconfigure.
 if(NOT CMAKE_MAKE_PROGRAM)
 	find_program(CMAKE_MAKE_PROGRAM ninja REQUIRED)
 endif()
 
-# Toolchain validation is the documented build-system reason for this probe;
-# source configuration never depends on incidental host state.
 execute_process(
 	COMMAND "${CMAKE_MAKE_PROGRAM}" --version
 	RESULT_VARIABLE STARTER_NINJA_STATUS
@@ -31,16 +27,29 @@ set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 
 project(starter LANGUAGES CXX)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-	message(FATAL_ERROR "the current unsafe network boundary supports Darwin only (got ${CMAKE_SYSTEM_NAME})")
+if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+	message(FATAL_ERROR "the current machine boundary is arm64 only (got ${CMAKE_SYSTEM_PROCESSOR})")
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+	set(STARTER_DARWIN TRUE)
+	set(STARTER_LINUX FALSE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	set(STARTER_DARWIN FALSE)
+	set(STARTER_LINUX TRUE)
+else()
+	message(FATAL_ERROR "the wait backend supports Darwin and Linux only (got ${CMAKE_SYSTEM_NAME})")
 endif()
 
 option(STARTER_LINT_GRAPH
 	"Configure the reflection-free Clang lint graph instead of the GCC production graph"
 	OFF
 )
+option(STARTER_RUNTIME_SANITIZERS
+	"Use runtime ASan+UBSan instead of trap-mode UBSan (the asan-ubsan preset)"
+	OFF
+)
 
-# The configure step decides toolchain acceptability; TUs never negotiate features.
 if(STARTER_LINT_GRAPH)
 	if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 		message(FATAL_ERROR "the lint graph requires the pinned Clang toolchain (got ${CMAKE_CXX_COMPILER_ID})")
@@ -66,72 +75,53 @@ else()
 	if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		message(FATAL_ERROR "production builds require the pinned GCC toolchain (got ${CMAKE_CXX_COMPILER_ID})")
 	endif()
-	if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.1
-			OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 16.2)
-		message(FATAL_ERROR "production builds require the pinned GCC 16.1.x (got ${CMAKE_CXX_COMPILER_VERSION})")
+	if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.1)
+		message(FATAL_ERROR "production builds require GCC 16.1 or later (got ${CMAKE_CXX_COMPILER_VERSION})")
 	endif()
 endif()
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Centralized `import std` policy: never set per target.
 set(CMAKE_CXX_MODULE_STD ON)
 
 # Module-ABI flags must be global: CMake's synthesized import-std targets see
 # only CMAKE_CXX_FLAGS, and the std module BMI must match every importer.
-# _GLIBCXX_ASSERTIONS is in the same class: the macro expands when the std
-# BMI is built, so a per-target define would be silently inert.
 string(APPEND CMAKE_CXX_FLAGS " -fno-exceptions -fno-rtti -D_GLIBCXX_ASSERTIONS")
 
 if(NOT STARTER_LINT_GRAPH)
-	# Whole-program optimization is Release-only: a Debug (-O0 -g) LTO link
-	# of this module graph grows lto1 memory without bound on the pinned
-	# toolchain — see the upstream/ entry. Unsupported IPO is a configure
-	# failure, never a silent degrade. The check must precede the
-	# -freflection append below: its probe TU compiles without the project
-	# -std=gnu++26, and -freflection is rejected outside C++26.
+	# IPO probe must precede -freflection: the probe TU is not compiled as C++26.
 	include(CheckIPOSupported)
 	check_ipo_supported(LANGUAGES CXX)
 	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
-
-	# -freflection is required for the std module to export std::meta at all.
 	string(APPEND CMAKE_CXX_FLAGS " -freflection")
 endif()
 
-# Target half of the centralized language profile. Module-ABI flags above are
-# global because CMake's synthesized std BMI cannot link this interface target.
 add_library(starter_language_profile INTERFACE)
 
 if(NOT STARTER_LINT_GRAPH)
-	# PIN(cmake-ld-link-order): the contracts runtime must land after every
-	# consumer's object files — see PINS.md
+	# PIN(cmake-ld-link-order): contracts runtime after every consumer — see PINS.md
 	target_link_libraries(starter_language_profile INTERFACE stdc++exp)
-
-	# Release undefined-behavior checking is trap-mode only: production
-	# binaries must never link a sanitizer runtime. The sanitizer pair must
-	# also be on the link line: LTO defers codegen to the ltrans phase, which
-	# otherwise emits runtime calls instead of traps.
-	target_compile_options(starter_language_profile INTERFACE
-		"$<$<CONFIG:Release>:-ffunction-sections;-fdata-sections;-fsanitize=undefined;-fsanitize-trap=all>"
-	)
-	target_link_options(starter_language_profile INTERFACE
-		"$<$<CONFIG:Release>:LINKER:-dead_strip;-fsanitize=undefined;-fsanitize-trap=all>"
-	)
+	if(NOT STARTER_RUNTIME_SANITIZERS)
+		target_compile_options(starter_language_profile INTERFACE
+			-fsanitize=undefined
+			-fsanitize-trap=all
+			"$<$<CONFIG:Release>:-ffunction-sections;-fdata-sections>"
+		)
+		target_link_options(starter_language_profile INTERFACE
+			-fsanitize=undefined
+			-fsanitize-trap=all
+			"$<$<AND:$<CONFIG:Release>,$<BOOL:${STARTER_DARWIN}>>:LINKER:-dead_strip>"
+			"$<$<AND:$<CONFIG:Release>,$<BOOL:${STARTER_LINUX}>>:LINKER:--gc-sections>"
+		)
+	endif()
 endif()
 
-# Hardened codegen is unconditional in every configuration and both graphs.
-# Stack-clash probing is GNU-scoped only because the lint Clang rejects the
-# flag as unused on this target.
 target_compile_options(starter_language_profile INTERFACE
 	-ftrivial-auto-var-init=zero
 	-fstack-protector-strong
 	-fzero-call-used-regs=used-gpr
-	"$<$<CXX_COMPILER_ID:GNU>:-fstack-clash-protection>"
-)
-
-target_compile_options(starter_language_profile INTERFACE
+	"$<$<CXX_COMPILER_ID:GNU>:-fstack-clash-protection;-fno-delete-null-pointer-checks;-fno-strict-aliasing;-fstrict-flex-arrays=3;-fzero-init-padding-bits=all>"
 	-Werror
 	-Wall
 	-Wextra
@@ -143,13 +133,38 @@ target_compile_options(starter_language_profile INTERFACE
 	-Wcast-align
 	-Wnull-dereference
 	-Wdouble-promotion
-	"$<$<CXX_COMPILER_ID:GNU>:-Wuseless-cast;-Wduplicated-branches;-Wduplicated-cond;-Wlogical-op>"
+	-Wformat
+	-Wformat=2
+	-Werror=format-security
+	-Wimplicit-fallthrough
+	"$<$<CXX_COMPILER_ID:GNU>:-Wuseless-cast;-Wduplicated-branches;-Wduplicated-cond;-Wlogical-op;-Wtrampolines;-Wbidi-chars=any>"
 )
 
+# PIN(darwin-inert-mitigations): FORTIFY and PAC/BTI are Linux-only — see PINS.md
+if(STARTER_LINUX)
+	target_compile_options(starter_language_profile INTERFACE
+		-fPIE
+		"$<$<CXX_COMPILER_ID:GNU>:-mbranch-protection=standard>"
+	)
+	target_link_options(starter_language_profile INTERFACE
+		-pie
+		LINKER:-z,relro
+		LINKER:-z,now
+		LINKER:-z,noexecstack
+		LINKER:-z,nodlopen
+		LINKER:--as-needed
+		LINKER:--no-copy-dt-needed-entries
+	)
+	if(NOT STARTER_RUNTIME_SANITIZERS)
+		target_compile_options(starter_language_profile INTERFACE
+			-U_FORTIFY_SOURCE
+			-D_FORTIFY_SOURCE=3
+		)
+	endif()
+endif()
+
 # PIN(gcc-gmf-stdexec-ice): stdexec backs the one foreign swap boundary
-# until libstdc++ ships __cpp_lib_senders — see PINS.md. The header-only
-# upstream dependency is pinned immutably and is also present in the lint graph
-# so the Clang-readable foreign boundary is genuinely checked.
+# until libstdc++ ships __cpp_lib_senders — see PINS.md
 include(FetchContent)
 FetchContent_Declare(stdexec
 	GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
@@ -172,8 +187,6 @@ if(NOT STARTER_LINT_GRAPH)
 	add_subdirectory(tests)
 endif()
 
-# The CMake-internal std-module target is not project code: no clang-tidy,
-# and strict c++26 (a gnu++26 BMI is rejected by our translation units).
 if(TARGET __cmake_cxx26)
 	set_property(TARGET __cmake_cxx26 PROPERTY CXX_EXTENSIONS OFF)
 	if(STARTER_LINT_GRAPH)

@@ -38,9 +38,10 @@ alternative.
 | Compile-time elaboration | `consteval` + reflection | preprocessor metaprogramming, generated boilerplate when reflection can derive it |
 | Synchronous failure | `std::expected<T, E>` | exceptions, error-code + out-param APIs |
 | Optionality | `std::optional<T>` | null sentinels, magic values |
-| Async effects | `std::execution` sender/receiver | `std::async`, raw futures/promises, direct coroutines, detached callbacks |
+| Async effects | `std::execution` sender/receiver for application value composition | `std::async`, raw futures/promises, direct coroutines, detached callbacks, stdexec task handlers on the reactor |
 | Parallel composition | sender combinators such as `when_all` | manually coordinated threads |
 | Kernel readiness | typed event values + one owner-driven state machine | callbacks, opaque self pointers, addresses in kernel user data |
+| Long-lived reference into owner storage | generational handle, distinct struct per table | stored pointers or references to slot state, generation-free indexes, phantom `Strong<Tag, T>` wrappers |
 | Resource lifetime | RAII | manual cleanup paths |
 | Dynamic ownership | `std::unique_ptr<T>` when a value cannot suffice | raw owning pointers, `shared_ptr`, `weak_ptr` |
 | Required borrow | `T&` / `T const&` | raw pointers |
@@ -105,10 +106,11 @@ Clang, MSVC, or alternative standard libraries inside dialect code.
 The configure/build step decides whether the pinned toolchain is acceptable.
 Translation units do not perform feature negotiation.
 
-The current machine boundary supports Darwin only. The configure gate rejects
-other systems; adding a platform means adding one explicit foreign
-implementation and selecting it in the build graph, not conditionalizing
-dialect code.
+The current machine boundary is Darwin arm64 and Linux arm64. The configure
+gate rejects every other OS and architecture. Adding a platform means adding
+one explicit wait-backend translation unit and selecting it in the build
+graph, not conditionalizing dialect code and not introducing preprocessor
+platform tests in C++.
 
 ---
 
@@ -543,12 +545,18 @@ Prefer several small concepts to a giant pseudo-interface.
 
 ### Forbidden
 
-Do not create nominal distinctions solely to make the compiler reject values:
+Do not create nominal distinctions solely to make the compiler reject equal
+representations:
 
 ```cpp
 struct UserIdTag;
 using UserId = Strong<UserIdTag, std::uint64_t>;  // forbidden philosophy
 ```
+
+A generational handle is not that pattern. `ConnectionHandle` names which
+owner table an index+generation pair refers to; mixing handle kinds is a
+representation error, like using a file descriptor as a kqueue ident. Do not
+implement handles as phantom `Strong<Tag, T>` aliases.
 
 Do not use:
 
@@ -897,8 +905,10 @@ Pass dependencies, state, clocks, randomness, and schedulers explicitly.
 
 ## 15. Concurrency and async
 
-The only application-level async/concurrency algebra is C++26
-`std::execution` sender/receiver.
+Kernel concurrency is the owner-driven reactor loop. Application-level
+value composition uses C++26 `std::execution` sender/receiver. Senders must
+not implement the server, color handlers, or replace the closed slot-state
+variant. Handlers stay synchronous, bounded, and non-blocking.
 
 Use sender combinators to describe work as values.
 
@@ -984,7 +994,10 @@ advance an explicit state machine.
 
 - One thread owns and mutates a reactor and every resource registered in it.
 - Kernel user data contains an integer token, never an address. A token is a
-  slot index plus a generation; stale generations are ignored.
+  `ConnectionHandle`: slot index plus generation in one integer. Stale
+  generations are ignored. A looked-up slot reference is never stored and
+  never held across a call into the owning system. Generation wrap retires
+  the slot.
 - Slots own their descriptors, buffers, deadlines, and closed state variant.
   The kernel owns none of them and cannot cause an address to be dereferenced.
 - Readiness callbacks, `void* self`, intrusive waiter nodes, and operation-state

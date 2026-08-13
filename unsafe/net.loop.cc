@@ -1,180 +1,22 @@
-#include <algorithm>
-#include <array>
-#include <cerrno>
-#include <chrono>
-#include <csignal>
-#include <cstdint>
-#include <cstdio>
-#include <exception>
-#include <expected>
-#include <limits>
-#include <memory>
-#include <optional>
-#include <span>
-#include <string_view>
-#include <tuple>
-#include <utility>
-#include <variant>
+#include "net.internal.h"
 
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <sys/event.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <cstdio>
 
 namespace starter::net_backend {
-
-struct Server;
 
 struct ServerDeleter {
 	auto operator()(Server* server) const noexcept -> void;
 };
 
 using ServerOwner = std::unique_ptr<Server, ServerDeleter>;
-using WireError = std::array<std::int32_t, 2>;
-using RawHandler = std::optional<std::size_t> (*)(std::string_view request, std::span<char> out) noexcept;
 
 [[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool;
 
 namespace {
 
-inline constexpr std::size_t buffer_bytes = 8192;
-inline constexpr std::size_t max_connections = 128;
-inline constexpr std::int64_t max_timeout_milliseconds = 86'400'000;
-inline constexpr int listen_backlog = 256;
-
-inline constexpr std::int32_t stage_configuration = 1;
-inline constexpr std::int32_t stage_socket = 2;
-inline constexpr std::int32_t stage_option = 3;
-inline constexpr std::int32_t stage_bind = 4;
-inline constexpr std::int32_t stage_listen = 5;
-inline constexpr std::int32_t stage_nonblock = 6;
-inline constexpr std::int32_t stage_queue = 7;
-inline constexpr std::int32_t stage_signal = 8;
-inline constexpr std::int32_t stage_resolve = 9;
-inline constexpr std::int32_t stage_accept = 10;
-
-inline constexpr std::uint64_t listener_token = 1;
-inline constexpr std::uint64_t interrupt_token = 2;
-inline constexpr std::uint64_t terminate_token = 3;
-inline constexpr std::uint64_t retry_token = 4;
-/* EVFILT_TIMER idents are namespaced by filter, so no fd collision */
-inline constexpr std::uint64_t retry_timer_ident = 1;
-inline constexpr std::chrono::milliseconds accept_retry_delay{100};
-inline constexpr std::uint64_t slot_bits = 8;
-inline constexpr std::uint64_t slot_mask = (std::uint64_t{1} << slot_bits) - 1;
-inline constexpr std::uint64_t max_generation = std::numeric_limits<std::uint64_t>::max() >> slot_bits;
-
-static_assert(max_connections <= (std::uint64_t{1} << slot_bits));
-
-using Clock = std::chrono::steady_clock;
-using Deadline = Clock::time_point;
-
-[[nodiscard]] constexpr auto wire_error(std::int32_t stage, std::int32_t code) -> WireError {
-	return {stage, code};
-}
-
-/* PIN(clang-contracts): keep the Clang-readable boundary fail-stop until Clang parses C++26 contracts */
-auto invariant(bool condition) noexcept -> void {
-	if (!condition) {
-		std::terminate();
-	}
-}
-
-class Fd {
-public:
-	Fd() = default;
-
-	explicit Fd(int value) noexcept : value_{value} {}
-
-	Fd(Fd&& other) noexcept : value_{std::exchange(other.value_, -1)} {}
-
-	auto operator=(Fd&& other) noexcept -> Fd& {
-		if (this != &other) {
-			reset();
-			value_ = std::exchange(other.value_, -1);
-		}
-		return *this;
-	}
-
-	Fd(Fd const&) = delete;
-	auto operator=(Fd const&) -> Fd& = delete;
-
-	~Fd() {
-		reset();
-	}
-
-	[[nodiscard]] auto get() const noexcept -> int {
-		return value_;
-	}
-
-	[[nodiscard]] auto valid() const noexcept -> bool {
-		return value_ >= 0;
-	}
-
-private:
-	auto reset() noexcept -> void {
-		if (value_ >= 0) {
-			std::ignore = ::close(std::exchange(value_, -1));
-		}
-	}
-
-	int value_ = -1;
-};
-
-struct Reading {
-	std::size_t received;
-	Deadline deadline;
-};
-
-struct Writing {
-	std::size_t size;
-	std::size_t sent;
-	Deadline deadline;
-};
-
-using SlotState = std::variant<std::monostate, Reading, Writing>;
-
-struct Slot {
-	std::uint64_t generation = 1;
-	Fd descriptor{};
-	std::array<char, buffer_bytes> input{};
-	std::array<char, buffer_bytes> output{};
-	SlotState state{};
-};
-
-[[nodiscard]] auto make_event(std::uint64_t ident, std::int16_t filter, std::uint16_t flags, std::uint32_t fflags,
-                              std::uint64_t token) noexcept -> ::kevent64_s {
-	auto event = ::kevent64_s{};
-	event.ident = ident;
-	event.filter = filter;
-	event.flags = flags;
-	event.fflags = fflags;
-	event.data = 0;
-	event.udata = token;
-	event.ext[0] = 0;
-	event.ext[1] = 0;
-	return event;
-}
-
-[[nodiscard]] auto submit(int queue, ::kevent64_s const& event) noexcept -> std::int32_t {
-	return ::kevent64(queue, &event, 1, nullptr, 0, 0, nullptr) < 0 ? errno : 0;
-}
-
 [[nodiscard]] auto set_nonblocking(int fd) noexcept -> std::int32_t {
 	auto const flags = ::fcntl(fd, F_GETFL, 0);
 	if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-		return errno;
-	}
-	return 0;
-}
-
-[[nodiscard]] auto configure_connection(int fd) noexcept -> std::int32_t {
-	if (auto const code = set_nonblocking(fd); code != 0) {
-		return code;
-	}
-	auto const one = 1;
-	if (::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one) < 0) {
 		return errno;
 	}
 	return 0;
@@ -218,18 +60,6 @@ struct Slot {
 	return ntohs(address.sin_port);
 }
 
-[[nodiscard]] constexpr auto connection_token(std::size_t index, std::uint64_t generation) -> std::uint64_t {
-	return (generation << slot_bits) | static_cast<std::uint64_t>(index);
-}
-
-[[nodiscard]] constexpr auto token_index(std::uint64_t token) -> std::size_t {
-	return static_cast<std::size_t>(token & slot_mask);
-}
-
-[[nodiscard]] constexpr auto token_generation(std::uint64_t token) -> std::uint64_t {
-	return token >> slot_bits;
-}
-
 [[nodiscard]] auto deadline_after(std::chrono::milliseconds timeout) -> Deadline {
 	auto const now = Clock::now();
 	auto const delta = std::chrono::duration_cast<Clock::duration>(timeout);
@@ -247,69 +77,11 @@ struct Slot {
 	auto const remaining = *deadline <= now ? Clock::duration::zero() : *deadline - now;
 	auto const seconds = std::chrono::duration_cast<std::chrono::seconds>(remaining);
 	auto const nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining - seconds);
-	return ::timespec{.tv_sec = static_cast<::time_t>(seconds.count()), .tv_nsec = static_cast<long>(nanoseconds.count())};
+	return ::timespec{
+	    .tv_sec = represent_as<::time_t>(seconds.count()),
+	    .tv_nsec = represent_as<long>(nanoseconds.count()),
+	};
 }
-
-using SignalHandler = decltype(SIG_DFL);
-
-class SignalGuard {
-public:
-	[[nodiscard]] static auto make() noexcept -> std::expected<SignalGuard, std::int32_t> {
-		/* SAFETY: Darwin EVFILT_SIGNAL records delivery attempts even when SIG_IGN prevents default action */
-		auto const old_interrupt = std::signal(SIGINT, SIG_IGN);
-		if (old_interrupt == SIG_ERR) {
-			return std::unexpected(errno == 0 ? EINVAL : errno);
-		}
-		auto const old_terminate = std::signal(SIGTERM, SIG_IGN);
-		if (old_terminate == SIG_ERR) {
-			auto const code = errno == 0 ? EINVAL : errno;
-			std::ignore = std::signal(SIGINT, old_interrupt);
-			return std::unexpected(code);
-		}
-		return SignalGuard{old_interrupt, old_terminate};
-	}
-
-	SignalGuard(SignalGuard&& other) noexcept
-	    : old_interrupt_{other.old_interrupt_}, old_terminate_{other.old_terminate_}, active_{std::exchange(other.active_, false)} {}
-
-	auto operator=(SignalGuard&&) -> SignalGuard& = delete;
-	SignalGuard(SignalGuard const&) = delete;
-	auto operator=(SignalGuard const&) -> SignalGuard& = delete;
-
-	~SignalGuard() {
-		if (active_) {
-			std::ignore = std::signal(SIGINT, old_interrupt_);
-			std::ignore = std::signal(SIGTERM, old_terminate_);
-		}
-	}
-
-private:
-	SignalGuard(SignalHandler old_interrupt, SignalHandler old_terminate) noexcept
-	    : old_interrupt_{old_interrupt}, old_terminate_{old_terminate} {}
-
-	SignalHandler old_interrupt_;
-	SignalHandler old_terminate_;
-	bool active_ = true;
-};
-
-}
-
-struct Server {
-	explicit Server(std::size_t connection_count) : slot_count{connection_count} {}
-
-	Fd queue{};
-	Fd listener{};
-	std::uint16_t port = 0;
-	std::size_t slot_count;
-	std::array<Slot, max_connections> slots{};
-	bool listener_armed = false;
-	bool accept_backoff = false;
-	bool ran = false;
-	std::chrono::milliseconds request_timeout{0};
-	std::chrono::milliseconds response_timeout{0};
-};
-
-namespace {
 
 [[nodiscard]] auto find_vacant(Server const& server) -> std::optional<std::size_t> {
 	for (auto index = std::size_t{0}; index < server.slot_count; ++index) {
@@ -321,7 +93,7 @@ namespace {
 }
 
 auto release_slot(Slot& slot) -> void {
-	invariant(slot.generation < max_generation);
+	invariant(slot.generation < handle_max_generation);
 	++slot.generation;
 	slot.descriptor = Fd{};
 	std::ignore = slot.state.emplace<std::monostate>();
@@ -331,20 +103,26 @@ auto release_slot(Slot& slot) -> void {
 	if (server.accept_backoff || server.listener_armed || !find_vacant(server)) {
 		return {};
 	}
-	auto const event = make_event(static_cast<std::uint64_t>(server.listener.get()), EVFILT_READ, EV_ADD | EV_ONESHOT, 0, listener_token);
-	if (auto const code = submit(server.queue.get(), event); code != 0) {
+	if (auto const code = arm_listen(server, server.listener.get(), listener_token); code != 0) {
 		return std::unexpected(wire_error(stage_queue, code));
 	}
 	server.listener_armed = true;
 	return {};
 }
 
-[[nodiscard]] auto arm_connection(Server& server, std::size_t index, std::int16_t filter) noexcept -> std::expected<void, WireError> {
+[[nodiscard]] auto arm_connection_read(Server& server, std::size_t index) noexcept -> std::expected<void, WireError> {
 	auto& slot = server.slots[index];
 	invariant(slot.descriptor.valid());
-	auto const event = make_event(static_cast<std::uint64_t>(slot.descriptor.get()), filter, EV_ADD | EV_ONESHOT, 0,
-	                              connection_token(index, slot.generation));
-	if (auto const code = submit(server.queue.get(), event); code != 0) {
+	if (auto const code = arm_read(server, slot.descriptor.get(), connection_token(index, slot.generation)); code != 0) {
+		return std::unexpected(wire_error(stage_queue, code));
+	}
+	return {};
+}
+
+[[nodiscard]] auto arm_connection_write(Server& server, std::size_t index) noexcept -> std::expected<void, WireError> {
+	auto& slot = server.slots[index];
+	invariant(slot.descriptor.valid());
+	if (auto const code = arm_write(server, slot.descriptor.get(), connection_token(index, slot.generation)); code != 0) {
 		return std::unexpected(wire_error(stage_queue, code));
 	}
 	return {};
@@ -364,7 +142,8 @@ auto release_slot(Slot& slot) -> void {
 			release_slot(slot);
 			return {};
 		}
-		auto const count = ::write(slot.descriptor.get(), slot.output.data() + writing->sent, writing->size - writing->sent);
+		auto const remaining = std::span<char const>{slot.output}.subspan(writing->sent, writing->size - writing->sent);
+		auto const count = connection_write(slot.descriptor.get(), remaining);
 		if (count > 0) {
 			writing->sent += static_cast<std::size_t>(count);
 			continue;
@@ -376,8 +155,8 @@ auto release_slot(Slot& slot) -> void {
 		if (errno == EINTR) {
 			continue;
 		}
-		if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			return arm_connection(server, index, EVFILT_WRITE);
+		if (errno == EAGAIN) {
+			return arm_connection_write(server, index);
 		}
 		release_slot(slot);
 		return {};
@@ -414,8 +193,8 @@ auto release_slot(Slot& slot) -> void {
 		if (errno == EINTR) {
 			continue;
 		}
-		if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			return arm_connection(server, index, EVFILT_READ);
+		if (errno == EAGAIN) {
+			return arm_connection_read(server, index);
 		}
 		release_slot(slot);
 		return {};
@@ -441,19 +220,17 @@ auto release_slot(Slot& slot) -> void {
 		if (!vacant) {
 			return {};
 		}
-		auto descriptor = Fd{::accept(server.listener.get(), nullptr, nullptr)};
+		auto descriptor = Fd{accept_connection(server.listener.get())};
 		if (!descriptor.valid()) {
 			if (errno == EINTR || errno == ECONNABORTED) {
 				continue;
 			}
-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			if (errno == EAGAIN) {
 				return {};
 			}
 			if (err_transient(errno)) {
 				server.accept_backoff = true;
-				auto event = make_event(retry_timer_ident, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, retry_token);
-				event.data = accept_retry_delay.count();
-				if (auto const code = submit(server.queue.get(), event); code != 0) {
+				if (auto const code = arm_timer(server, accept_retry_delay, retry_token); code != 0) {
 					return std::unexpected(wire_error(stage_queue, code));
 				}
 				return {};
@@ -502,37 +279,25 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	}
 }
 
-[[nodiscard]] auto register_signals(Server& server) noexcept -> std::expected<void, WireError> {
-	auto const interrupt = make_event(SIGINT, EVFILT_SIGNAL, EV_ADD | EV_CLEAR, 0, interrupt_token);
-	if (auto const code = submit(server.queue.get(), interrupt); code != 0) {
-		return std::unexpected(wire_error(stage_signal, code));
-	}
-	auto const terminate = make_event(SIGTERM, EVFILT_SIGNAL, EV_ADD | EV_CLEAR, 0, terminate_token);
-	if (auto const code = submit(server.queue.get(), terminate); code != 0) {
-		return std::unexpected(wire_error(stage_signal, code));
-	}
-	return {};
-}
-
 [[nodiscard]] auto connections_idle(Server const& server) -> bool {
 	return std::ranges::all_of(std::span{server.slots}.first(server.slot_count), [](Slot const& slot) {
 		return std::holds_alternative<std::monostate>(slot.state);
 	});
 }
 
-[[nodiscard]] auto dispatch(Server& server, std::span<::kevent64_s const> events, RawHandler handler, bool& draining) noexcept
+[[nodiscard]] auto dispatch(Server& server, std::span<Event const> events, RawHandler handler, bool& draining) noexcept
     -> std::expected<bool, WireError> {
 	for (auto const& event : events) {
-		if (event.udata == interrupt_token || event.udata == terminate_token) {
+		if (event.token == stop_token) {
 			if (draining) {
 				return true;
 			}
 			draining = true;
 			continue;
 		}
-		if (event.udata == listener_token) {
-			if ((event.flags & EV_ERROR) != 0) {
-				return std::unexpected(wire_error(stage_queue, static_cast<std::int32_t>(event.data)));
+		if (event.token == listener_token) {
+			if (event.error) {
+				return std::unexpected(wire_error(stage_queue, event.error_code));
 			}
 			if (draining) {
 				server.listener_armed = false;
@@ -543,16 +308,16 @@ auto expire_slots(Server& server, Deadline now) -> void {
 			}
 			continue;
 		}
-		if (event.udata == retry_token) {
-			if ((event.flags & EV_ERROR) != 0) {
-				return std::unexpected(wire_error(stage_queue, static_cast<std::int32_t>(event.data)));
+		if (event.token == retry_token) {
+			if (event.error) {
+				return std::unexpected(wire_error(stage_queue, event.error_code));
 			}
 			server.accept_backoff = false;
 			continue;
 		}
 
-		auto const index = token_index(event.udata);
-		auto const generation = token_generation(event.udata);
+		auto const index = token_index(event.token);
+		auto const generation = token_generation(event.token);
 		if (index >= server.slot_count) {
 			continue;
 		}
@@ -560,15 +325,15 @@ auto expire_slots(Server& server, Deadline now) -> void {
 		if (generation == 0 || generation != slot.generation) {
 			continue;
 		}
-		if ((event.flags & EV_ERROR) != 0) {
+		if (event.error) {
 			release_slot(slot);
 			continue;
 		}
-		if (event.filter == EVFILT_READ && std::holds_alternative<Reading>(slot.state)) {
+		if (event.ready == Ready::Read && std::holds_alternative<Reading>(slot.state)) {
 			if (auto advanced = advance_read(server, index, handler); !advanced) {
 				return std::unexpected(advanced.error());
 			}
-		} else if (event.filter == EVFILT_WRITE && std::holds_alternative<Writing>(slot.state)) {
+		} else if (event.ready == Ready::Write && std::holds_alternative<Writing>(slot.state)) {
 			if (auto advanced = advance_write(server, index); !advanced) {
 				return std::unexpected(advanced.error());
 			}
@@ -577,6 +342,10 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	return false;
 }
 
+}
+
+Server::~Server() {
+	queue_close(*this);
 }
 
 [[nodiscard]] auto err_transient(std::int32_t code) noexcept -> bool {
@@ -613,6 +382,10 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	return std::chrono::milliseconds{max_timeout_milliseconds};
 }
 
+[[nodiscard]] auto handle_index_width() noexcept -> std::uint64_t {
+	return handle_index_bits;
+}
+
 [[nodiscard]] auto server_open(std::uint16_t port, std::size_t connection_count, std::chrono::milliseconds request_timeout,
                                std::chrono::milliseconds response_timeout) noexcept -> std::expected<ServerOwner, WireError> {
 	if (connection_count == 0 || connection_count > max_connections || request_timeout.count() <= 0 || response_timeout.count() <= 0 ||
@@ -628,14 +401,12 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	if (!resolved_port) {
 		return std::unexpected(resolved_port.error());
 	}
-	auto queue = Fd{::kqueue()};
-	if (!queue.valid()) {
-		return std::unexpected(wire_error(stage_queue, errno));
-	}
 
 	auto server = ServerOwner{new Server{connection_count}};
+	if (auto opened = queue_open(*server); !opened) {
+		return std::unexpected(opened.error());
+	}
 	server->listener = std::move(*listener);
-	server->queue = std::move(queue);
 	server->port = *resolved_port;
 	server->request_timeout = request_timeout;
 	server->response_timeout = response_timeout;
@@ -648,31 +419,26 @@ auto expire_slots(Server& server, Deadline now) -> void {
 	}
 	server.ran = true;
 
-	auto signal_guard = SignalGuard::make();
-	if (!signal_guard) {
-		return std::unexpected(wire_error(stage_signal, signal_guard.error()));
-	}
-	if (auto registered = register_signals(server); !registered) {
-		return registered;
+	if (auto const code = arm_signals(server); code != 0) {
+		return std::unexpected(wire_error(stage_signal, code));
 	}
 	if (auto armed = arm_listener(server); !armed) {
 		return armed;
 	}
 
-	auto events = std::array<::kevent64_s, 64>{};
+	auto events = std::array<Event, 64>{};
 	auto draining = false;
 	for (;;) {
 		auto timeout = timeout_until(nearest_deadline(server));
-		auto const count =
-		    ::kevent64(server.queue.get(), nullptr, 0, events.data(), static_cast<int>(events.size()), 0, timeout ? &*timeout : nullptr);
-		if (count < 0) {
-			if (errno == EINTR) {
+		auto const waited = wait_events(server, events, timeout);
+		if (!waited) {
+			if (waited.error() == EINTR) {
 				continue;
 			}
-			return std::unexpected(wire_error(stage_queue, errno));
+			return std::unexpected(wire_error(stage_queue, waited.error()));
 		}
 		expire_slots(server, Clock::now());
-		auto const ready = std::span{events}.first(static_cast<std::size_t>(count));
+		auto const ready = std::span{events}.first(*waited);
 		auto dispatched = dispatch(server, ready, handler, draining);
 		if (!dispatched) {
 			return std::unexpected(dispatched.error());

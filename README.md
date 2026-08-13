@@ -3,7 +3,8 @@
 A starter template for a deliberately small C++26 systems dialect: modules
 only, exception-free, RTTI-free, structural, value-oriented,
 reflection-driven, ownership-explicit, and bounded at every wire boundary.
-The current machine boundary is intentionally Darwin-only.
+The machine boundary is Darwin arm64 and Linux arm64. CMake selects one
+wait backend; dialect code has no platform branch.
 
 [`AGENTS.md`](AGENTS.md) is normative. The build enforces the pinned
 toolchain tuple; this document deliberately does not duplicate its versions.
@@ -17,11 +18,12 @@ The project adopts the skalibs ownership and event-loop shape in modern C++:
 - views are synchronous and call-scoped,
 - readiness is returned as data into caller-owned storage,
 - one loop owns and mutates every registered resource,
-- kernel user data contains integer slot generations, never addresses,
+- kernel user data contains integer slot generations (`ConnectionHandle`), never addresses,
 - connection count, request size, response size, and deadlines are bounded.
 
 The HTTP server is a single-threaded bounded reactor. It multiplexes up to the
-named `max_connection_count` with `kevent64`, owns every descriptor and buffer
+named `max_connection_count` with `kevent64` on Darwin and `epoll` on Linux,
+owns every descriptor and buffer
 in a slot, and uses `{slot, generation}` tokens to reject stale events. SIGINT
 and SIGTERM are events in the same loop. There are no worker threads, callback
 waiters, opaque self pointers, or shared mutable state.
@@ -39,7 +41,8 @@ alone copies that value into the fixed reactor buffer.
 ## Build and run
 
 Bring the pinned tools on `PATH`; configure rejects every other tuple. Local
-paths belong in a gitignored `CMakeUserPresets.json`.
+paths belong in a gitignored `CMakeUserPresets.json`. Production GCC is 16.1
+or later (Linux CI uses 16.1; Darwin development may use trunk).
 
 ```sh
 cmake --preset dev
@@ -74,12 +77,15 @@ is hardened by default; none of it is configurable. Every configuration
 builds with `_GLIBCXX_ASSERTIONS`, `-ftrivial-auto-var-init=zero`,
 `-fstack-protector-strong`, `-fstack-clash-protection` (GCC graph only; the
 lint Clang rejects the flag on this target), and
-`-fzero-call-used-regs=used-gpr`. The `release` preset additionally links
-with GCC LTO and compiles with trap-mode UBSan (`-fsanitize=undefined
--fsanitize-trap=all`), which needs no runtime library. LTO applies to the
-`release` preset only: a `-flto -g` link has unbounded memory growth on the
-pinned toolchain (`upstream/gcc-lto-modules-debug-oom/`; registry entry
-`gcc-darwin-lto-debug-dsymutil` in `PINS.md`).
+`-fzero-call-used-regs=used-gpr`. Dev and release compile with trap-mode
+UBSan (`-fsanitize=undefined -fsanitize-trap=all`); the `asan-ubsan` preset
+uses the runtime sanitizers instead and never defines `_FORTIFY_SOURCE`.
+Linux additionally enables `_FORTIFY_SOURCE=3`, `-mbranch-protection=standard`,
+PIE, and RELRO/NOW. Those Darwin-inert flags stay off and are recorded in
+`PINS.md`. The `release` preset additionally links with GCC LTO. LTO applies
+to the `release` preset only: a `-flto -g` link has unbounded memory growth on
+the pinned Darwin toolchain (`upstream/gcc-lto-modules-debug-oom/`; registry
+entry `gcc-darwin-lto-debug-dsymutil` in `PINS.md`).
 
 Deliberately absent, under the same no-empty-check policy:
 
@@ -102,7 +108,7 @@ Deliberately absent, under the same no-empty-check policy:
 src/        the starter module and pure dialect partitions
 tests/      module-native tests and the HTTP integration smoke test
 foreign/    pinned external-library adaptation; the stdexec boundary
-unsafe/     Darwin syscall adaptation; the owner-driven kqueue reactor
+unsafe/     syscall adaptation; shared owner loop plus Darwin kqueue / Linux epoll
 examples/   the blocking bounded HTTP server
 upstream/   GCC/libstdc++ reproductions and submission material
 ```

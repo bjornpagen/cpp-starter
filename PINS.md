@@ -13,12 +13,26 @@ The accepted pinned toolchain release series and generator live only in the
 top-level CMake configure gate. The stdexec revision lives only in the
 top-level CMake dependency declaration.
 
+## darwin-inert-mitigations
+
+- symptom: `_FORTIFY_SOURCE=3` is excluded from every C++ TU by Apple's SDK,
+  and `-mbranch-protection=standard` executes as NOP in plain-arm64 Darwin
+  processes, so both flags are byte-for-byte inert on the dev host
+- sites: CMakeLists.txt — Linux-only `if(CMAKE_SYSTEM_NAME STREQUAL "Linux")`
+  block on `starter_language_profile`; Darwin never receives the flags
+- workaround: select the live mitigations in CMake, never behind a C++ `#ifdef`
+- retire: enable each flag on Darwin when the SDK actually instruments C++
+  (FORTIFY) or the process is PAC/BTI-enforced (branch protection); re-test
+  on every toolchain bump
+- upstream: none — platform ABI facts, recorded so they are not re-enabled
+  as empty checks
+
 ## clang-contracts
 
 - symptom: the pinned Clang lint frontend does not parse the C++26
   `contract_assert` statement accepted by the production GCC graph
-- sites: `unsafe/net.backend.cc` — one fail-stop `invariant` helper used by
-  the Clang-readable kqueue boundary
+- sites: `unsafe/net.internal.h` — one fail-stop `invariant` helper used by
+  the Clang-readable kqueue/epoll boundary
 - workaround: implement that one boundary helper with `std::terminate`; do
   not proliferate an alternate assertion vocabulary into dialect code
 - retire: replace the helper and its call sites with `contract_assert` when
