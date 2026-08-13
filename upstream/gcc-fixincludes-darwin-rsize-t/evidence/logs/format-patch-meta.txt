@@ -1,0 +1,25 @@
+format-patch identity, 2026-08-13
+
+file: 0001-stddef.h-Support-explicit-__need_rsize_t-PR126782.patch
+SHA-256: 385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de
+size: 7930 bytes
+charset: us-ascii
+CRLF: no
+Co-authored-by: absent (stripped; Cursor injected it on the first local commit)
+
+From: Bjorn Pagen <hello@bjornpagen.com>
+Subject: [PATCH] stddef.h: Support explicit __need_rsize_t [PR126782]
+subject after classifier: 52 characters, limit 75
+PR form in subject: [PR126782]
+PR form in body: PR target/126782
+
+GCC clone (do not push):
+  /Users/bjorn/.gcc/src/gcc
+  commit 63e3cdeb413866b501b102e5e37afcd6a1f510d7
+  parent c5d147d7370fb36834c9348c5d3bab229d89fb3e (gcc-mirror master)
+  tree   ffea8fc53fbe8755874410cec9a109eeba7fea6f
+
+gcc-changelog git_check_commit.py: OK
+git apply --check on parent: OK
+applied tree equals HEAD tree: YES
+git diff --check: OK

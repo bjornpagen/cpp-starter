@@ -1,8 +1,11 @@
-==== check_GNU_style.sh ====
+==== check_GNU_style.sh on format-patch ====
+
 
 Sentences should end with a dot.  Dot, space, space, end of the comment.
-38:+#endif /* _RSIZE_T */
+106:+#endif /* _RSIZE_T */
 
 There should be exactly one space between function name and parenthesis.
-10:+    || defined(__need_wint_t) || defined(__need_rsize_t)
-18:+     && !defined(__need_wint_t) && !defined(__need_rsize_t))
+78:+    || defined(__need_wint_t) || defined(__need_rsize_t)
+86:+     && !defined(__need_wint_t) && !defined(__need_rsize_t))
+
+See style-notes.txt. Do not change these lines.

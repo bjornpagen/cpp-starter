@@ -5,23 +5,30 @@ report status is in [`BUGS.md`](BUGS.md).
 
 ## Now
 
-1. PR 126782: wait for the Finch 3-stage bootstrap and `make -k check`.
-   - Packet: [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/).
-   - After that job ends, fill the test paragraph in `EMAIL.txt`.
-   - Then build `git format-patch` from the tested tree.
-   - Do not mail gcc-patches or comment on Bugzilla until the user
-     approves the exact public artifact.
+1. PR 126782: local patch packet is in
+   [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/).
+   - Public send is blocked.
+   - Bjorn must approve the exact values in
+     `gcc-fixincludes-darwin-rsize-t/APPROVAL-PACKET.md`.
+   - Then a sending agent follows `HANDOFF.md`.
+   - Do not mail gcc-patches, comment on Bugzilla, change Bugzilla
+     fields, or push a GCC remote until that approval names this
+     SHA-256:
+     `385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`.
 
 ## Next
 
-1. Prepare the Apple `_rsize_t.h` report after the PR 126782 fix direction is
-   stable.
+1. After the gcc-patches archive shows the mail, draft a one-line
+   Bugzilla note with that URL and get a separate approval.
+2. Prepare the Apple `_rsize_t.h` report after the PR 126782 fix
+   direction is stable.
 
 ## Later
 
 1. Re-test every pin in `PINS.md` after a GCC toolchain update.
 2. Send one polite ping after an appropriate period of silence. Recheck GCC
-   policy and trunk before each ping.
+   policy and trunk before each ping. Reply to the original thread. Do not
+   start a new ping thread.
 
 ## Removed work
 

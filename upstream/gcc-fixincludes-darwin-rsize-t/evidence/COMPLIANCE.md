@@ -1,14 +1,16 @@
 # Compliance list for PR 126782 gcc-patches
 
-Policy page: https://gcc.sourceware.org/contribute.html (read 2026-08-13).
-Do not send until every open item is done.
+Policy pages: evidence/logs/policy-read.txt (read 2026-08-13).
+Public send is blocked until Bjorn approves APPROVAL-PACKET.md for
+SHA-256 `385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`.
 A Bugzilla attachment does not replace gcc-patches.
 
 ## Legal
 
 - [x] The contributor owns the work (user confirmed 2026-08-13)
 - [x] From identity: Bjorn Pagen <hello@bjornpagen.com> (matches Bugzilla)
-- [x] Signed-off-by line is in COMMIT-MESSAGE.txt
+- [x] Signed-off-by line is in the format-patch and EMAIL.txt
+- [x] Co-authored-by is absent from the public patch
 - [ ] The user approves the exact public email before send
 
 ## Maintainer direction (PR 126782 comments 3 and 4)
@@ -27,32 +29,26 @@ A Bugzilla attachment does not replace gcc-patches.
 - [x] Subject after `[PATCH]` is 52 characters and uses `[PR126782]`
 - [x] Body uses `PR target/126782`
 - [x] `git diff --check` is clean
-- [x] `git apply --check` is clean on HEAD `c5d147d7370fb36834c9348c5d3bab229d89fb3e`
+- [x] `git apply --check` is clean on parent `c5d147d7370fb36834c9348c5d3bab229d89fb3e`
+- [x] Applied tree equals the local commit tree
 - [x] `check_GNU_style.sh` hits match the existing `__need_*` and `_SIZE_T` style
 - [x] `mklog.py` ran. Keep the handwritten `stddef.h` ChangeLog line.
-- [ ] `git format-patch` from a local commit, after bootstrap and check
-- [ ] `contrib/gcc-changelog` check on that commit
+- [x] `git format-patch` from local commit `63e3cdeb413866b501b102e5e37afcd6a1f510d7`
+- [x] `contrib/gcc-changelog` check on that commit: OK
 
 ## Testing (contribute.html)
 
-- [ ] 3-stage bootstrap, default languages, at least one target
-- [ ] `make -k check` on that build
-- [ ] Test the exact patch that the mail will send
+- [x] 3-stage bootstrap, default languages, at least one target
+- [x] `make -k check` on that build
+- [x] Test the exact patch that the mail will send
 - [x] Darwin protocol probes recorded
 - [x] Original `rsize.cc -fmodules` recorded as already passing on Darwin GCC 17
-- [ ] Do not call the work a bootstrap until Finch prints `bootstrap finished`
-- [x] Trunk only. No GCC 16 backport.
-
-Finch container `gcc-rsize-bootstrap` still runs.
-PID 1 is `sleep`. The exec runs `bootstrap.sh`.
-Languages: `c,c++,fortran,lto,objc`.
-`stage_final` is stage3.
-Host, build, and target: `aarch64-unknown-linux-gnu`.
+- [x] Trunk only. No GCC 16 backport request in the public mail.
 
 ## Routing
 
 - [x] To: `gcc-patches@gcc.gnu.org` only
-- [x] Not libstdc++, Fortran, Rust, jit, or bpf lists
+- [x] Not libstdc++, Fortran, Rust, jit, Algol 68, or bpf lists
 - [x] Plain text, not HTML
 - [x] Write-access sentence is in EMAIL.txt
 - [x] This packet does not comment on Bugzilla, change fields, or push to GCC

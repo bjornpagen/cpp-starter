@@ -1,32 +1,54 @@
 From: Bjorn Pagen <hello@bjornpagen.com>
 To: gcc-patches@gcc.gnu.org
+Cc:
 Subject: [PATCH] stddef.h: Support explicit __need_rsize_t [PR126782]
-MIME: text/plain. Use inline git format-patch. Do not use application/*.
 
-AGENT: do not send this mail yet.
-The Finch 3-stage bootstrap still runs.
-After that job ends, write the real test results in the next paragraph.
+GCC <stddef.h> already answers selective typedef requests such as
+__need_size_t.  System headers, including the macOS SDK, use the same
+protocol with __need_rsize_t.  Clang <stddef.h> answers that request.
+GCC did not.  The include returned without a definition of rsize_t.
+
+Answer the explicit request only.  Define rsize_t as __SIZE_TYPE__.
+Guard it with _RSIZE_T to match Clang and the SDK non-modular branch.
+Consume __need_rsize_t.  A partial request still does not set
+_STDDEF_H.
+
+Do not declare rsize_t on a normal inclusion.  Do not declare it when
+__STDC_WANT_LIB_EXT1__ is set.  That would put an Annex K name on
+targets whose C libraries do not implement Annex K.  Comment 5 described
+Clang's full-inclusion path.  This patch does not follow that path.
+RSIZE_MAX and the bounds-checked functions stay with the C library.
+
+PR target/126782 first showed on Darwin with -fmodules.  GCC 16 reported
+__has_feature(modules), so the SDK took its __need_rsize_t branch.
+Trunk no longer reports that feature.  This patch adds the protocol.
+It does not restore that old trigger.
+
+Bootstrapped all default languages and ran make -k check on
+aarch64-unknown-linux-gnu.  Stages 2 and 3 compared equal.  New tests
+gcc.dg/stddef-need-rsize-1.c through -4.c and
+g++.dg/stddef-need-rsize-1.C pass.  make -k check totals:
+PASS=997628 FAIL=57 XFAIL=5623 XPASS=0 UNSUPPORTED=11149 UNRESOLVED=7
+ERROR=0.  None of the FAILs involve stddef.h.  Two in-tree MPFR
+long-double tests hung with empty logs.  I stopped tget_ld_2exp and
+tset_ld with SIGTERM.  They are not GCC DejaGnu tests.
 
 I do not have GCC write access.
 OK for trunk?
 
-This patch answers only an explicit __need_rsize_t request.
-A normal inclusion of <stddef.h> does not declare rsize_t.
-It still does not declare rsize_t when __STDC_WANT_LIB_EXT1__ is set.
-Comment 5 described Clang's full-inclusion path.
-This patch does not follow that path.
-That path would put an Annex K name on targets whose C libraries lack Annex K.
+gcc/ChangeLog:
 
-The original rsize.cc test with Darwin -fmodules already compiles on trunk.
-Current GCC does not report __has_feature(modules).
-This patch adds the missing protocol.
-It does not restore that old trigger.
+	PR target/126782
+	* ginclude/stddef.h (__need_rsize_t): New selective-inclusion
+	request.  Define rsize_t as __SIZE_TYPE__.
 
-This patch is for trunk only.
-Do not ask for a GCC 16 backport.
+gcc/testsuite/ChangeLog:
 
---- 8< ---
+	PR target/126782
+	* gcc.dg/stddef-need-rsize-1.c: New test.
+	* gcc.dg/stddef-need-rsize-2.c: New test.
+	* gcc.dg/stddef-need-rsize-3.c: New test.
+	* gcc.dg/stddef-need-rsize-4.c: New test.
+	* g++.dg/stddef-need-rsize-1.C: New test.
 
-Use COMMIT-MESSAGE.txt as the git commit message.
-That file includes Signed-off-by.
-Build the patch bytes with git format-patch after the tests end.
+Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>

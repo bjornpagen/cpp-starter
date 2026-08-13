@@ -1,3 +1,71 @@
+From 63e3cdeb413866b501b102e5e37afcd6a1f510d7 Mon Sep 17 00:00:00 2001
+From: Bjorn Pagen <hello@bjornpagen.com>
+Date: Thu, 13 Aug 2026 16:49:34 -0500
+Subject: [PATCH] stddef.h: Support explicit __need_rsize_t [PR126782]
+
+GCC <stddef.h> already answers selective typedef requests such as
+__need_size_t.  System headers, including the macOS SDK, use the same
+protocol with __need_rsize_t.  Clang <stddef.h> answers that request.
+GCC did not.  The include returned without a definition of rsize_t.
+
+Answer the explicit request only.  Define rsize_t as __SIZE_TYPE__.
+Guard it with _RSIZE_T to match Clang and the SDK non-modular branch.
+Consume __need_rsize_t.  A partial request still does not set
+_STDDEF_H.
+
+Do not declare rsize_t on a normal inclusion.  Do not declare it when
+__STDC_WANT_LIB_EXT1__ is set.  That would put an Annex K name on
+targets whose C libraries do not implement Annex K.  Comment 5 described
+Clang's full-inclusion path.  This patch does not follow that path.
+RSIZE_MAX and the bounds-checked functions stay with the C library.
+
+PR target/126782 first showed on Darwin with -fmodules.  GCC 16 reported
+__has_feature(modules), so the SDK took its __need_rsize_t branch.
+Trunk no longer reports that feature.  This patch adds the protocol.
+It does not restore that old trigger.
+
+Bootstrapped all default languages and ran make -k check on
+aarch64-unknown-linux-gnu.  Stages 2 and 3 compared equal.  New tests
+gcc.dg/stddef-need-rsize-1.c through -4.c and
+g++.dg/stddef-need-rsize-1.C pass.  make -k check totals:
+PASS=997628 FAIL=57 XFAIL=5623 XPASS=0 UNSUPPORTED=11149 UNRESOLVED=7
+ERROR=0.  None of the FAILs involve stddef.h.  Two in-tree MPFR
+long-double tests hung with empty logs.  I stopped tget_ld_2exp and
+tset_ld with SIGTERM.  They are not GCC DejaGnu tests.
+
+I do not have GCC write access.
+OK for trunk?
+
+gcc/ChangeLog:
+
+	PR target/126782
+	* ginclude/stddef.h (__need_rsize_t): New selective-inclusion
+	request.  Define rsize_t as __SIZE_TYPE__.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/126782
+	* gcc.dg/stddef-need-rsize-1.c: New test.
+	* gcc.dg/stddef-need-rsize-2.c: New test.
+	* gcc.dg/stddef-need-rsize-3.c: New test.
+	* gcc.dg/stddef-need-rsize-4.c: New test.
+	* g++.dg/stddef-need-rsize-1.C: New test.
+
+Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
+---
+ gcc/ginclude/stddef.h                      | 19 ++++++++++--
+ gcc/testsuite/g++.dg/stddef-need-rsize-1.C | 15 ++++++++++
+ gcc/testsuite/gcc.dg/stddef-need-rsize-1.c | 35 ++++++++++++++++++++++
+ gcc/testsuite/gcc.dg/stddef-need-rsize-2.c | 22 ++++++++++++++
+ gcc/testsuite/gcc.dg/stddef-need-rsize-3.c |  7 +++++
+ gcc/testsuite/gcc.dg/stddef-need-rsize-4.c |  9 ++++++
+ 6 files changed, 105 insertions(+), 2 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/stddef-need-rsize-1.C
+ create mode 100644 gcc/testsuite/gcc.dg/stddef-need-rsize-1.c
+ create mode 100644 gcc/testsuite/gcc.dg/stddef-need-rsize-2.c
+ create mode 100644 gcc/testsuite/gcc.dg/stddef-need-rsize-3.c
+ create mode 100644 gcc/testsuite/gcc.dg/stddef-need-rsize-4.c
+
 diff --git a/gcc/ginclude/stddef.h b/gcc/ginclude/stddef.h
 index 454e5e9fc..185c6ea18 100644
 --- a/gcc/ginclude/stddef.h
@@ -159,3 +227,6 @@ index 000000000..8638ee67f
 +#include <stddef.h>
 +
 +rsize_t value; /* { dg-error "unknown type name 'rsize_t'" } */
+-- 
+2.50.1 (Apple Git-155)
+
