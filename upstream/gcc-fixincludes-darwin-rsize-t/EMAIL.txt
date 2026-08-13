@@ -1,0 +1,32 @@
+From: Bjorn Pagen <hello@bjornpagen.com>
+To: gcc-patches@gcc.gnu.org
+Subject: [PATCH] stddef.h: Support explicit __need_rsize_t [PR126782]
+MIME: text/plain. Use inline git format-patch. Do not use application/*.
+
+AGENT: do not send this mail yet.
+The Finch 3-stage bootstrap still runs.
+After that job ends, write the real test results in the next paragraph.
+
+I do not have GCC write access.
+OK for trunk?
+
+This patch answers only an explicit __need_rsize_t request.
+A normal inclusion of <stddef.h> does not declare rsize_t.
+It still does not declare rsize_t when __STDC_WANT_LIB_EXT1__ is set.
+Comment 5 described Clang's full-inclusion path.
+This patch does not follow that path.
+That path would put an Annex K name on targets whose C libraries lack Annex K.
+
+The original rsize.cc test with Darwin -fmodules already compiles on trunk.
+Current GCC does not report __has_feature(modules).
+This patch adds the missing protocol.
+It does not restore that old trigger.
+
+This patch is for trunk only.
+Do not ask for a GCC 16 backport.
+
+--- 8< ---
+
+Use COMMIT-MESSAGE.txt as the git commit message.
+That file includes Signed-off-by.
+Build the patch bytes with git format-patch after the tests end.

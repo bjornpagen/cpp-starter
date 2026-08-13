@@ -18,9 +18,10 @@ Use these files as the control documents:
 
 ## Public submission rule
 
-Local research is reversible. Public reports, comments, attachments, emails,
-and pushes are not. Prepare the complete artifact first. Then get approval for
-the exact public values.
+Local research is reversible.
+Public reports, comments, attachments, emails, and pushes are not reversible.
+Prepare the complete artifact first.
+Then get approval for the exact public values.
 
 Read the current GCC policy before each new submission:
 

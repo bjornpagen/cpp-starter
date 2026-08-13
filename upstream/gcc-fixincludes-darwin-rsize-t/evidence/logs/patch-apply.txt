@@ -1,0 +1,23 @@
+worktree: /tmp/gcc-apply-pr126782
+HEAD: c5d147d7370fb36834c9348c5d3bab229d89fb3e
+==== git apply --check ====
+apply --check: OK
+==== git apply ====
+apply: OK
+==== files after apply ====
+ M gcc/ginclude/stddef.h
+?? gcc/testsuite/g++.dg/stddef-need-rsize-1.C
+?? gcc/testsuite/gcc.dg/stddef-need-rsize-1.c
+?? gcc/testsuite/gcc.dg/stddef-need-rsize-2.c
+?? gcc/testsuite/gcc.dg/stddef-need-rsize-3.c
+?? gcc/testsuite/gcc.dg/stddef-need-rsize-4.c
+==== grep need_rsize in applied stddef.h ====
+31:    || defined(__need_wint_t) || defined(__need_rsize_t)
+38:     && !defined(__need_wint_t) && !defined(__need_rsize_t))
+256:   system header explicitly requests it via __need_rsize_t.  A normal
+260:#if defined (__need_rsize_t)
+261:#ifndef _RSIZE_T	/* in case the OS headers have defined it.  */
+262:#define _RSIZE_T
+267:#endif /* _RSIZE_T */
+268:#undef __need_rsize_t
+269:#endif /* __need_rsize_t.  */

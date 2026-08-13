@@ -1,0 +1,32 @@
+PR target/126782 protocol matrix
+Date: 2026-08-13 UTC
+Base: gcc-mirror master c5d147d7370fb36834c9348c5d3bab229d89fb3e
+
+Unpatched header: git show HEAD:gcc/ginclude/stddef.h, passed with -I
+Patched header: gcc/ginclude/stddef.h from the patch, passed with -I
+
+Expected results:
+
+- Explicit __need_rsize_t: fail without the patch, pass with the patch
+- Full <stddef.h>: no rsize_t before or after
+- Full include plus __STDC_WANT_LIB_EXT1__: no rsize_t before or after
+- Full include, then __need_rsize_t: fail without the patch, pass with it
+
+Darwin gcc 17.0.0 20260810 (experimental), aarch64-apple-darwin24:
+
+- darwin-unpatched-need-rsize.c     rc=1
+- darwin-unpatched-full-include.c   rc=1
+- darwin-unpatched-full-want.c      rc=1
+- darwin-unpatched-full-then-need.c rc=1
+- darwin-unpatched-need-rsize.cc    rc=1
+- darwin-patched-need-rsize.c       rc=0
+- darwin-patched-full-include.c     rc=1
+- darwin-patched-full-want.c        rc=1
+- darwin-patched-full-then-need.c   rc=0
+- darwin-patched-need-rsize.cc      rc=0
+- darwin-rsize-cc-fmodules          rc=0
+- __has_feature(modules) with -fmodules: 0
+
+Log: evidence/logs/darwin-probes.log
+
+Linux trunk bootstrap results: append them after make -k check ends.

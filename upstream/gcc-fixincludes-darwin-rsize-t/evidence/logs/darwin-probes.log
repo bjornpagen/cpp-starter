@@ -1,0 +1,87 @@
+==== start 2026-08-13T03:20:04Z ====
+Using built-in specs.
+COLLECT_GCC=/Users/bjorn/.gcc/versions/17.0.0/bin/g++-17
+COLLECT_LTO_WRAPPER=/Users/bjorn/.gcc/versions/17.0.0/libexec/gcc/aarch64-apple-darwin24/17/lto-wrapper
+Target: aarch64-apple-darwin24
+Configured with: /Users/bjorn/.gcc/src/gcc-darwin-arm64/configure --prefix=/Users/bjorn/.gcc/versions/17.0.0 --enable-languages=c,c++ --disable-nls --enable-checking=release --program-suffix=-17 --with-system-zlib --disable-bootstrap --with-gcc-major-version-only --build=aarch64-apple-darwin24 --with-sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk CC=/usr/bin/clang CXX=/usr/bin/clang++
+Thread model: posix
+Supported LTO compression algorithms: zlib
+gcc version 17.0.0 20260810 (experimental) (GCC) 
+c5d147d7370fb36834c9348c5d3bab229d89fb3e
+----- darwin-unpatched-need-rsize.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/unpatched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/need-rsize.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/need-rsize.c:3:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    3 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+darwin-unpatched-need-rsize.c rc=1
+----- darwin-unpatched-full-include.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/unpatched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-include.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-include.c:2:23: error: 'rsize_t' undeclared here (not in a function); did you mean 'size_t'?
+    2 | int has_type = sizeof(rsize_t);
+      |                       ^~~~~~~
+      |                       size_t
+exit 1
+darwin-unpatched-full-include.c rc=1
+----- darwin-unpatched-full-want.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/unpatched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-want.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-want.c:3:23: error: 'rsize_t' undeclared here (not in a function); did you mean 'size_t'?
+    3 | int has_type = sizeof(rsize_t);
+      |                       ^~~~~~~
+      |                       size_t
+exit 1
+darwin-unpatched-full-want.c rc=1
+----- darwin-unpatched-full-then-need.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/unpatched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-then-need.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-then-need.c:4:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    4 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+darwin-unpatched-full-then-need.c rc=1
+----- darwin-unpatched-need-rsize.cc -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/unpatched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/need-rsize.cc
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/need-rsize.cc:3:1: error: 'rsize_t' does not name a type; did you mean 'size_t'?
+    3 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+darwin-unpatched-need-rsize.cc rc=1
+----- darwin-patched-need-rsize.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/patched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/need-rsize.c
+exit 0
+darwin-patched-need-rsize.c rc=0
+----- darwin-patched-full-include.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/patched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-include.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-include.c:2:23: error: 'rsize_t' undeclared here (not in a function); did you mean 'size_t'?
+    2 | int has_type = sizeof(rsize_t);
+      |                       ^~~~~~~
+      |                       size_t
+exit 1
+darwin-patched-full-include.c rc=1
+----- darwin-patched-full-want.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/patched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-want.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-want.c:3:23: error: 'rsize_t' undeclared here (not in a function); did you mean 'size_t'?
+    3 | int has_type = sizeof(rsize_t);
+      |                       ^~~~~~~
+      |                       size_t
+exit 1
+darwin-patched-full-want.c rc=1
+----- darwin-patched-full-then-need.c -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/patched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/full-then-need.c
+exit 0
+darwin-patched-full-then-need.c rc=0
+----- darwin-patched-need-rsize.cc -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/headers/patched /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/need-rsize.cc
+exit 0
+darwin-patched-need-rsize.cc rc=0
+==== original rsize.cc -fmodules (historical trigger) ====
+----- darwin-rsize-cc-fmodules -----
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -std=c++26 -fmodules -c /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/evidence/probes/rsize.cc -o /tmp/rsize-cc-probe.o
+exit 0
+darwin-rsize-cc-fmodules rc=0
+==== __has_feature(modules) ====
+#define __cpp_modules 201810L
+int no;
+==== done 2026-08-13T03:20:05Z ====

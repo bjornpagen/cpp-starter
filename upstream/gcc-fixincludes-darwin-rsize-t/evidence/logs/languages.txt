@@ -1,0 +1,15 @@
+The following languages will be built: c,c++,fortran,lto,objc
+stage_final: stage3
+build: aarch64-unknown-linux-gnu
+host: aarch64-unknown-linux-gnu
+target: aarch64-unknown-linux-gnu
+BUILD_CONFIG: bootstrap-debug
+enable-checking: yes (configure argument)
+disable-bootstrap: not set (3-stage)
+unsupported subdirectories (expected, missing tools):
+  zlib gnattools gotools libgrust target-libada target-libga68
+  target-libgcobol target-libphobos target-zlib target-libgo
+  target-libffi target-libgm2 target-libgrust
+skipped tools: gnatbind/gnatmake (Ada), ga68, gdc (D), cargo (Rust)
+default languages for this environment therefore include Fortran and
+Objective-C, not only C and C++.

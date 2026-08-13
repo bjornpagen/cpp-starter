@@ -17,7 +17,7 @@ Last full read-only review: 2026-08-13 UTC.
 
 | PR | Summary | Component | Bugzilla status | Local state | Next action |
 |---|---|---|---|---|---|
-| [126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) | `[Darwin] sys/_types/_rsize_t.h does not define rsize_t with -fmodules` | target | UNCONFIRMED | `private-packet-ready` | Private `__need_rsize_t` patch is ready. Do not send until the exact gcc-patches artifact and legal route are approved. Evidence: [`gcc-fixincludes-darwin-rsize-t`](gcc-fixincludes-darwin-rsize-t/). |
+| [126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) | `[Darwin] sys/_types/_rsize_t.h does not define rsize_t with -fmodules` | target | UNCONFIRMED | `bootstrap-running` | Wait for the Finch 3-stage bootstrap and `make -k check`. Then fill `EMAIL.txt`. Do not send until the user approves the exact gcc-patches mail. Evidence: [`gcc-fixincludes-darwin-rsize-t`](gcc-fixincludes-darwin-rsize-t/). |
 | [126783](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126783) | `[16/17 Regression] [modules] ICE when a GMF variable is later defined inline` | c++ | ASSIGNED | `pointer-only` | None. Patrick Palka has the assignment. Pin: `gcc-gmf-stdexec-ice`. |
 | [126786](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126786) | `[libstdc++] Module fallback installs empty interface files but the manifest lists them` | libstdc++ | UNCONFIRMED | `pointer-only` | None. |
 | [126805](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126805) | `[analyzer] ICE in convert_region_from_summary for a class return slot` | analyzer | UNCONFIRMED | `pointer-only` | None. |

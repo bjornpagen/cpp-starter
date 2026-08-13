@@ -1,0 +1,4 @@
+subject after classifier: stddef.h: Support explicit __need_rsize_t [PR126782]
+length: 52 (limit 75)
+ok
+uses [PRnnnnn] without component: True

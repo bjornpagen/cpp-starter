@@ -5,11 +5,12 @@ report status is in [`BUGS.md`](BUGS.md).
 
 ## Now
 
-1. PR 126782 private packet is ready.
-   - Review [`gcc-fixincludes-darwin-rsize-t/0001-stddef.h-Support-explicit-__need_rsize_t-PR-target-126782.patch`](gcc-fixincludes-darwin-rsize-t/0001-stddef.h-Support-explicit-__need_rsize_t-PR-target-126782.patch)
-     and [`COMMIT-MESSAGE.txt`](gcc-fixincludes-darwin-rsize-t/COMMIT-MESSAGE.txt).
-   - Do not mail gcc-patches, comment on Bugzilla, or add `Signed-off-by`
-     until the exact public artifact and legal route are approved.
+1. PR 126782: wait for the Finch 3-stage bootstrap and `make -k check`.
+   - Packet: [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/).
+   - After that job ends, fill the test paragraph in `EMAIL.txt`.
+   - Then build `git format-patch` from the tested tree.
+   - Do not mail gcc-patches or comment on Bugzilla until the user
+     approves the exact public artifact.
 
 ## Next
 
@@ -30,3 +31,4 @@ report status is in [`BUGS.md`](BUGS.md).
 - Do not send the superseded fixincludes patch for PR 126782.
 - Do not file the reflection/modules defect. PR 124582 already fixed it.
 - Do not recreate deleted reproduction trees for pointer-only ledger rows.
+- Do not ask for a GCC 16 backport of PR 126782. Trunk only.

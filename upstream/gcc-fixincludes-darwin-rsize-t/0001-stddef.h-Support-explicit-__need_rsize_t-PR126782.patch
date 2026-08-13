@@ -41,6 +41,27 @@ index 454e5e9fc..185c6ea18 100644
  
  /* Wide character type.
     Locale-writers should change this as necessary to
+diff --git a/gcc/testsuite/g++.dg/stddef-need-rsize-1.C b/gcc/testsuite/g++.dg/stddef-need-rsize-1.C
+new file mode 100644
+index 000000000..ffdcc87f8
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/stddef-need-rsize-1.C
+@@ -0,0 +1,15 @@
++/* PR target/126782 */
++/* Explicit __need_rsize_t must define rsize_t in C++ as well.  */
++/* { dg-do compile } */
++
++#define __need_rsize_t
++#include <stddef.h>
++
++#ifdef __need_rsize_t
++#error "__need_rsize_t was not consumed"
++#endif
++
++rsize_t value;
++
++extern rsize_t *p;
++extern __SIZE_TYPE__ *p;
 diff --git a/gcc/testsuite/gcc.dg/stddef-need-rsize-1.c b/gcc/testsuite/gcc.dg/stddef-need-rsize-1.c
 new file mode 100644
 index 000000000..ed51379f3

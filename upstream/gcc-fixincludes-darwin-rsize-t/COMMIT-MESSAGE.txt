@@ -1,24 +1,25 @@
-[PATCH] stddef.h: Support explicit __need_rsize_t [PR target/126782]
+stddef.h: Support explicit __need_rsize_t [PR126782]
 
-GCC's <stddef.h> already honors selective typedef requests such as
+GCC <stddef.h> already answers selective typedef requests such as
 __need_size_t.  System headers, including the macOS SDK, use the same
-protocol with __need_rsize_t.  Clang's <stddef.h> answers that request.
-GCC did not, so the include returned without defining rsize_t.
+protocol with __need_rsize_t.  Clang <stddef.h> answers that request.
+GCC did not.  The include returned without a definition of rsize_t.
 
-Honor the explicit request only.  Define rsize_t as __SIZE_TYPE__,
-guard it with _RSIZE_T to match Clang and the SDK's non-modular branch,
-and consume __need_rsize_t.  A partial request still does not set
+Answer the explicit request only.  Define rsize_t as __SIZE_TYPE__.
+Guard it with _RSIZE_T to match Clang and the SDK non-modular branch.
+Consume __need_rsize_t.  A partial request still does not set
 _STDDEF_H.
 
-Do not declare rsize_t on a normal inclusion, including when
-__STDC_WANT_LIB_EXT1__ is set.  That would leak an Annex K name onto
-targets whose C libraries do not implement Annex K.  RSIZE_MAX and the
-bounds-checked functions remain the C library's responsibility.
+Do not declare rsize_t on a normal inclusion.  Do not declare it when
+__STDC_WANT_LIB_EXT1__ is set.  That would put an Annex K name on
+targets whose C libraries do not implement Annex K.  Comment 5 described
+Clang's full-inclusion path.  This patch does not follow that path.
+RSIZE_MAX and the bounds-checked functions stay with the C library.
 
-PR target/126782 originally showed up on Darwin with -fmodules, because
-GCC 16 reported __has_feature(modules) and the SDK then took its
-__need_rsize_t branch.  Trunk no longer claims that feature.  This patch
-is the protocol support, not a restoration of that trigger.
+PR target/126782 first showed on Darwin with -fmodules.  GCC 16 reported
+__has_feature(modules), so the SDK took its __need_rsize_t branch.
+Trunk no longer reports that feature.  This patch adds the protocol.
+It does not restore that old trigger.
 
 gcc/ChangeLog:
 
@@ -33,3 +34,6 @@ gcc/testsuite/ChangeLog:
 	* gcc.dg/stddef-need-rsize-2.c: New test.
 	* gcc.dg/stddef-need-rsize-3.c: New test.
 	* gcc.dg/stddef-need-rsize-4.c: New test.
+	* g++.dg/stddef-need-rsize-1.C: New test.
+
+Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
