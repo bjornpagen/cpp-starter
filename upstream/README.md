@@ -13,7 +13,6 @@ Use these files as the control documents:
 - [`EVIDENCE-ARCHIVE.md`](EVIDENCE-ARCHIVE.md) locates large or machine-specific
   evidence that does not belong in Git.
 - `ENVIRONMENT-gcc-v.txt` contains the recorded GCC 16.1.0 configuration.
-- `buildguard.sh` limits memory and time for unsafe reproductions.
 - [`gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md`](gcc-fixincludes-darwin-rsize-t/LOCAL-AGENT-HANDOFF.md)
   is the local GCC trunk patch handoff for PR 126782.
 

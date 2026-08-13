@@ -9,8 +9,7 @@ raw evidence locations.
 
 - The root is `/Users/bjorn/finch-gcc16/` on the host. That directory survives
   reboots. `/tmp` does not.
-- The memory watchdog lived at `/tmp/buildguard.sh` during the campaign. A copy
-  now also lives in this repository, at `upstream/buildguard.sh`.
+- The memory watchdog lived at `/tmp/buildguard.sh` during the campaign.
 
 ## Toolchains in the volume
 
@@ -54,7 +53,7 @@ Each line names the artifact and states what it proves.
 One unguarded run of the lto-oom archive-link reproduction caused a kernel
 panic on the development machine. The root cause: the static archives fed
 dsymutil invalid `__DWARF` sections from `-flto -g` fat objects, and dsymutil
-grew without bound. Therefore every reproduction must run under `buildguard.sh`
+grew without bound. Therefore every reproduction must run under a memory and time watchdog.
 or under an explicit `ulimit -v` cap.
 
 ## Bugzilla access

@@ -31,10 +31,10 @@ jobs:
       NINJA_SHA256: fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Install pinned CMake, Ninja, and smoke-test tools
+      - name: Install pinned CMake and Ninja
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends curl ca-certificates unzip netcat-openbsd
+          apt-get install -y --no-install-recommends curl ca-certificates unzip
           curl -fsSL -o /tmp/cmake.tar.gz "$CMAKE_URL"
           echo "$CMAKE_SHA256  /tmp/cmake.tar.gz" | sha256sum -c
           tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tar.gz
@@ -61,10 +61,10 @@ jobs:
       NINJA_SHA256: fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Install pinned CMake, Ninja, and smoke-test tools
+      - name: Install pinned CMake and Ninja
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends curl ca-certificates unzip netcat-openbsd
+          apt-get install -y --no-install-recommends curl ca-certificates unzip
           curl -fsSL -o /tmp/cmake.tar.gz "$CMAKE_URL"
           echo "$CMAKE_SHA256  /tmp/cmake.tar.gz" | sha256sum -c
           tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tar.gz
