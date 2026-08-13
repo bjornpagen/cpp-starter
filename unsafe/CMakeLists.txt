@@ -31,14 +31,6 @@ endif()
 
 target_link_libraries(starter_net_backend PRIVATE starter_language_profile)
 
-add_library(starter_child STATIC
-	child.cc
-)
-set_source_files_properties(child.cc PROPERTIES CXX_SCAN_FOR_MODULES OFF)
-set_target_properties(starter_child PROPERTIES CXX_MODULE_STD OFF)
-target_include_directories(starter_child PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(starter_child PRIVATE starter_language_profile)
-
 if(NOT STARTER_LINT_GRAPH)
 	target_link_libraries(starter_module PRIVATE starter_net_backend)
 endif()

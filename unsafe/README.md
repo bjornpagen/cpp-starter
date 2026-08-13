@@ -40,9 +40,3 @@ Views crossing that call are valid only for the call and are never retained.
 The public handler above that trampoline sees no buffer: it consumes an owning
 request and returns an owning response value. It executes inline on the owner
 loop, so it must be bounded and nonblocking.
-
-## Child processes
-
-`child.cc` is a POSIX spawn/wait/pipe owner used only by the testkit module.
-Kernel user data still never holds an address; the child pid and the stdout
-pipe are the owned resources.
