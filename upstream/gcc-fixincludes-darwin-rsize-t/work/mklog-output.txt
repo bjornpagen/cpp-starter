@@ -1,0 +1,5 @@
+mklog.py missing unidiff; writing skeleton
+Traceback (most recent call last):
+  File "/Users/bjorn/.gcc/src/gcc/contrib/mklog.py", line 38, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'

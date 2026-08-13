@@ -7,19 +7,23 @@ patch submission, fix, or verification run.
 `Bugzilla status` is the literal upstream field. `Local state` records the next
 action in this repository. Do not infer one from the other.
 
-Last full read-only review: 2026-08-12 UTC.
+The only in-tree investigation directory is
+[`gcc-fixincludes-darwin-rsize-t`](gcc-fixincludes-darwin-rsize-t/). Every other
+row is a Bugzilla pointer. Do not recreate deleted reproduction trees.
+
+Last full read-only review: 2026-08-13 UTC.
 
 ## Active reports
 
-| PR | Summary | Component | Bugzilla status | Local state | Local evidence | Next action |
-|---|---|---|---|---|---|---|
-| [126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) | `[Darwin] sys/_types/_rsize_t.h does not define rsize_t with -fmodules` | target | UNCONFIRMED | `patch-investigation` | [`gcc-fixincludes-darwin-rsize-t`](gcc-fixincludes-darwin-rsize-t/) | Implement and test the maintainer-preferred `__need_rsize_t` approach before proposing a patch. |
-| [126783](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126783) | `[16/17 Regression] [modules] ICE when a GMF variable is later defined inline` | c++ | ASSIGNED | `assigned-upstream` | [`gcc-modules-gmf-inline-variable-ice`](gcc-modules-gmf-inline-variable-ice/) | Wait for Patrick Palka's work. Respond if he requests evidence or testing. |
-| [126786](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126786) | `[libstdc++] Module fallback installs empty interface files but the manifest lists them` | libstdc++ | UNCONFIRMED | `awaiting-triage` | [`libstdcxx-empty-module-fallback`](libstdcxx-empty-module-fallback/) | Wait for a libstdc++ maintainer to choose the expected fallback behavior. |
-| [126805](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126805) | `[analyzer] ICE in convert_region_from_summary for a class return slot` | analyzer | UNCONFIRMED | `awaiting-triage` | [`gcc-analyzer-call-summary-ice`](gcc-analyzer-call-summary-ice/) | Monitor for triage. Prepare a patch only after the fix and regression test are validated. |
-| [126806](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126806) | `[analyzer] false fd-leak warning for a caller-owned struct member` | analyzer | UNCONFIRMED | `awaiting-triage` | [`gcc-analyzer-fd-leak-raii-fp`](gcc-analyzer-fd-leak-raii-fp/) | Wait for analyzer maintainer feedback on the ownership model. |
-| [126819](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126819) | `[analyzer] false fd-leak warning on a throwing edge in a noexcept destructor` | analyzer | UNCONFIRMED | `awaiting-triage` | [`gcc-analyzer-fd-leak-raii-fp`](gcc-analyzer-fd-leak-raii-fp/) | Wait for analyzer maintainer feedback on exception and `noexcept` modeling. |
-| [126822](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126822) | `-fhardened target warning cannot be controlled by -Whardened` | middle-end | UNCONFIRMED | `awaiting-triage` | [`gcc-darwin-fhardened-coverage`](gcc-darwin-fhardened-coverage/) | Wait for a decision on whether the unsupported-target diagnostic must use the `-Whardened` class. |
+| PR | Summary | Component | Bugzilla status | Local state | Next action |
+|---|---|---|---|---|---|
+| [126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) | `[Darwin] sys/_types/_rsize_t.h does not define rsize_t with -fmodules` | target | UNCONFIRMED | `patch-investigation` | Implement and test the maintainer-preferred `__need_rsize_t` approach before proposing a patch. Evidence: [`gcc-fixincludes-darwin-rsize-t`](gcc-fixincludes-darwin-rsize-t/). |
+| [126783](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126783) | `[16/17 Regression] [modules] ICE when a GMF variable is later defined inline` | c++ | ASSIGNED | `pointer-only` | None. Patrick Palka has the assignment. Pin: `gcc-gmf-stdexec-ice`. |
+| [126786](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126786) | `[libstdc++] Module fallback installs empty interface files but the manifest lists them` | libstdc++ | UNCONFIRMED | `pointer-only` | None. |
+| [126805](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126805) | `[analyzer] ICE in convert_region_from_summary for a class return slot` | analyzer | UNCONFIRMED | `pointer-only` | None. |
+| [126806](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126806) | `[analyzer] false fd-leak warning for a caller-owned struct member` | analyzer | UNCONFIRMED | `pointer-only` | None. |
+| [126819](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126819) | `[analyzer] false fd-leak warning on a throwing edge in a noexcept destructor` | analyzer | UNCONFIRMED | `pointer-only` | None. |
+| [126822](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126822) | `-fhardened target warning cannot be controlled by -Whardened` | middle-end | UNCONFIRMED | `pointer-only` | None. Pin: `gcc-darwin-fhardened`. |
 
 ## Completed or dispositioned reports
 
@@ -27,18 +31,15 @@ Last full read-only review: 2026-08-12 UTC.
 |---|---|---|---|---|
 | [126823](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126823) | `-fhardened applied partially after target rejection, with no per-constituent report` | UNCONFIRMED | `closed-no-action` | A maintainer said that the behavior works as designed. The option is documented as GNU/Linux-only. Do not pursue the unsupported-target semantics. |
 
-## Existing reports and issues that need evidence
+## Existing reports
 
-| Upstream item | Local evidence | Planned action |
+| Upstream item | Local state | Note |
 |---|---|---|
-| [GCC PR 82005](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82005) | [`gcc-lto-modules-debug-oom`](gcc-lto-modules-debug-oom/) | Add one evidence comment after approval. Do not file a new GCC report. |
-| [LLVM issue 102965](https://github.com/llvm/llvm-project/issues/102965) | [`gcc-lto-modules-debug-oom`](gcc-lto-modules-debug-oom/) | Add one comment with the measured `dsymutil` growth after approval. |
-
-## Retired investigations
-
-| Investigation | Upstream result | Local state |
-|---|---|---|
-| [`gcc-modules-freflection-typedef-merge`](gcc-modules-freflection-typedef-merge/) | [GCC PR 124582](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124582), fixed for GCC 16.2 | `fixed-upstream` |
+| [GCC PR 125595](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=125595) | `pointer-only` | Pin `gcc-partition-bmi-inplace-vector`. Do not file or comment. Re-test `inplace_vector` on every toolchain bump. |
+| [GCC PR 82005](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82005) | `pointer-only` | Pin `gcc-darwin-lto-debug-dsymutil`. Do not file a new GCC report. |
+| [LLVM issue 102965](https://github.com/llvm/llvm-project/issues/102965) | `pointer-only` | Same pin. Do not comment without approval. |
+| [GCC PR 124582](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124582) | `fixed-upstream` | Fixed for GCC 16.2. |
+| [GCC PR 124197](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124197) | `pointer-only` | Pin `gcc-template-for-wshadow`. |
 
 ## Update procedure
 
@@ -46,6 +47,5 @@ Last full read-only review: 2026-08-12 UTC.
 2. Update the literal Bugzilla status.
 3. Update the local state only when the next action changes.
 4. Record the current UTC date in the review line.
-5. Update the related investigation README.
-6. Keep technical evidence in the investigation directory, not in this ledger.
-7. Do not post, comment, upload, or change fields as part of a ledger refresh.
+5. Keep technical evidence in `gcc-fixincludes-darwin-rsize-t/` only.
+6. Do not post, comment, upload, or change fields as part of a ledger refresh.

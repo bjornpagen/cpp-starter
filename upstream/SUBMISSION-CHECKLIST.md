@@ -106,8 +106,9 @@ Sources:
 
 ## After submission
 
-- Add the report to [`BUGS.md`](BUGS.md).
-- Update the investigation README.
+- Add the report to [`BUGS.md`](BUGS.md) as a Bugzilla pointer.
+- Keep an investigation directory only when this repository is producing a
+  patch. Today that is `gcc-fixincludes-darwin-rsize-t/` for PR 126782.
 - Record automatic Bugzilla results, such as the component assignee.
 - Record the attachment IDs and any obsolete replacements.
 - Recheck the report and activity log without changing them.

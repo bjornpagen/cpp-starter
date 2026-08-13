@@ -68,11 +68,9 @@ top-level CMake dependency declaration.
   serialization, and keep all returned data owning
 - retire: replace both members with `std::inplace_vector` and run a clean full
   graph on every pinned-toolchain bump
-- upstream: no standalone reduction yet; [GCC PR
-  99426](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=99426) tracks the general
-  module-cluster `Bad file data` family, but this exact C++26 library-type
-  trigger has not been established as a duplicate. Do not comment or file it
-  without first producing and testing a minimal reduction.
+- upstream: [GCC PR 125595](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=125595)
+  (`NEW`, unassigned). Ledger: [`upstream/BUGS.md`](upstream/BUGS.md). Do not
+  file a second report. Do not comment without approval.
 
 ## gcc-gmf-stdexec-ice
 
@@ -93,13 +91,9 @@ top-level CMake dependency declaration.
   native senders on every toolchain bump; once available, the backend re-binds
   `namespace ex` to `std::execution`, the FetchContent pin is deleted, and
   everything upward is untouched
-- upstream: filed 2026-08-10 as PR c++/126783 ("[16/17 Regression] [modules]
-  ICE when a GMF variable is later defined inline"). Bugzilla marks it
-  ice-on-valid-code, a 15.2→16 regression (See Also PR 122551, whose fix
-  introduced the crashing transfer_defining_module path), blocking the
-  c++-modules meta-bug, milestone 16.3. The reproduction directory was
-  removed from the tree after filing — recover from git history before
-  commit `e0a9d27` if needed
+- upstream: [GCC PR 126783](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126783)
+  (`ASSIGNED`, Patrick Palka, milestone 16.3). Ledger:
+  [`upstream/BUGS.md`](upstream/BUGS.md)
 
 ## gcc-template-for-wshadow
 
@@ -115,9 +109,8 @@ top-level CMake dependency declaration.
   statements; `-Wshadow` stays on everywhere else
 - retire: delete the scoped suppressions when the fix for GCC PR 124197
   ships in the pinned toolchain; re-test on every toolchain bump
-- upstream: GCC PR 124197 — CC + comment with our evidence (fires once per
-  element on the pinned compiler's reflection variant) per upstream/README.md; no
-  directory of our own
+- upstream: [GCC PR 124197](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124197).
+  Ledger: [`upstream/BUGS.md`](upstream/BUGS.md)
 
 ## cmake-ld-link-order
 
@@ -193,14 +186,12 @@ top-level CMake dependency declaration.
 - workaround: never combine `-flto` with `-g` on this target; unsupported
   IPO is a configure failure, not a silent degrade
 - retire: when the pinned GCC emits `__DWARF` sections that pass
-  `dwarfdump --verify` under `-flto -g` (re-test the minimal repro in the
-  upstream entry on every toolchain bump), and dsymutil survives the full
+  `dwarfdump --verify` under `-flto -g`, and dsymutil survives the full
   dev-preset IPO link under a memory guard
-- upstream: `upstream/gcc-lto-modules-debug-oom/` — 4-file guarded repro,
-  trigger matrix, and growth-curve evidence; the Linux control is done
-  (ELF fat LTO objects verify clean, so the corruption is Mach-O-only —
-  file against the Darwin target side), then a follow-up Apple Feedback
-  for dsymutil's unbounded warning loop
+- upstream: [GCC PR 82005](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82005)
+  and [LLVM issue 102965](https://github.com/llvm/llvm-project/issues/102965).
+  Ledger: [`upstream/BUGS.md`](upstream/BUGS.md). Do not file a new GCC
+  report. Do not comment without approval.
 
 ## gcc-darwin-fhardened
 
@@ -220,11 +211,9 @@ top-level CMake dependency declaration.
   both classifies the unsupported-target warning under `-Whardened` and
   enables the umbrella (or accurate per-constituent reporting) on Darwin;
   re-test the `-E -dM` macro set on every toolchain bump
-- upstream: `upstream/gcc-darwin-fhardened-coverage/` — one-line repro,
-  constituent evidence, triage of configure.ac:7982 / toplev.cc:1642 /
-  opts.cc / c-opts.cc:1747 verified; status: hold for the Linux control
-  check, then Bugzilla `middle-end` plus a configure.ac Darwin-enablement
-  patch to gcc-patches
+- upstream: [GCC PR 126822](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126822)
+  (`NEW`). [PR 126823](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126823) is
+  closed locally as designed. Ledger: [`upstream/BUGS.md`](upstream/BUGS.md)
 
 ## cmake-ipo-probe-ordering
 

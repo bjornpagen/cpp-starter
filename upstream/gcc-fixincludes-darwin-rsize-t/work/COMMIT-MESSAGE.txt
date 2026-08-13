@@ -1,0 +1,35 @@
+[PATCH] stddef.h: Support explicit __need_rsize_t [PR target/126782]
+
+GCC's <stddef.h> already honors selective typedef requests such as
+__need_size_t.  System headers, including the macOS SDK, use the same
+protocol with __need_rsize_t.  Clang's <stddef.h> answers that request.
+GCC did not, so the include returned without defining rsize_t.
+
+Honor the explicit request only.  Define rsize_t as __SIZE_TYPE__,
+guard it with _RSIZE_T to match Clang and the SDK's non-modular branch,
+and consume __need_rsize_t.  A partial request still does not set
+_STDDEF_H.
+
+Do not declare rsize_t on a normal inclusion, including when
+__STDC_WANT_LIB_EXT1__ is set.  That would leak an Annex K name onto
+targets whose C libraries do not implement Annex K.  RSIZE_MAX and the
+bounds-checked functions remain the C library's responsibility.
+
+PR target/126782 originally showed up on Darwin with -fmodules, because
+GCC 16 reported __has_feature(modules) and the SDK then took its
+__need_rsize_t branch.  Trunk no longer claims that feature.  This patch
+is the protocol support, not a restoration of that trigger.
+
+gcc/ChangeLog:
+
+	PR target/126782
+	* ginclude/stddef.h (__need_rsize_t): New selective-inclusion
+	request.  Define rsize_t as __SIZE_TYPE__.
+
+gcc/testsuite/ChangeLog:
+
+	PR target/126782
+	* gcc.dg/stddef-need-rsize-1.c: New test.
+	* gcc.dg/stddef-need-rsize-2.c: New test.
+	* gcc.dg/stddef-need-rsize-3.c: New test.
+	* gcc.dg/stddef-need-rsize-4.c: New test.

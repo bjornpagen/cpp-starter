@@ -1,0 +1,7 @@
+
+Sentences should end with a dot.  Dot, space, space, end of the comment.
+38:+#endif /* _RSIZE_T */
+
+There should be exactly one space between function name and parenthesis.
+10:+    || defined(__need_wint_t) || defined(__need_rsize_t)
+18:+     && !defined(__need_wint_t) && !defined(__need_rsize_t))

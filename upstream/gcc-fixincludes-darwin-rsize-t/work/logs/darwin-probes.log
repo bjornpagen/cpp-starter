@@ -1,0 +1,86 @@
+=== compiler identity ===
+Using built-in specs.
+COLLECT_GCC=/Users/bjorn/.gcc/versions/17.0.0/bin/g++-17
+COLLECT_LTO_WRAPPER=/Users/bjorn/.gcc/versions/17.0.0/libexec/gcc/aarch64-apple-darwin24/17/lto-wrapper
+Target: aarch64-apple-darwin24
+Configured with: /Users/bjorn/.gcc/src/gcc-darwin-arm64/configure --prefix=/Users/bjorn/.gcc/versions/17.0.0 --enable-languages=c,c++ --disable-nls --enable-checking=release --program-suffix=-17 --with-system-zlib --disable-bootstrap --with-gcc-major-version-only --build=aarch64-apple-darwin24 --with-sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk CC=/usr/bin/clang CXX=/usr/bin/clang++
+Thread model: posix
+Supported LTO compression algorithms: zlib
+gcc version 17.0.0 20260810 (experimental) (GCC) 
+ProductName:		macOS
+ProductVersion:		15.7.7
+BuildVersion:		24G720
+Xcode 26.3
+Build version 17C529
+SDK=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk version=26.2
+===== darwin-unpatched-need-rsize.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/unpatched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/need-rsize.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/need-rsize.c:3:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    3 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-unpatched-need-rsize.cc =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/unpatched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/need-rsize.cc
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/need-rsize.cc:3:1: error: 'rsize_t' does not name a type; did you mean 'size_t'?
+    3 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-unpatched-full-include.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/unpatched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-include.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-include.c:2:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    2 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-unpatched-full-want.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/unpatched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-want.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-want.c:3:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    3 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-unpatched-full-then-need.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/unpatched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-then-need.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-then-need.c:4:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    4 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-patched-need-rsize.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/patched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/need-rsize.c
+exit 0
+===== darwin-patched-need-rsize.cc =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/patched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/need-rsize.cc
+exit 0
+===== darwin-patched-full-include.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/patched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-include.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-include.c:2:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    2 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-patched-full-want.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/patched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-want.c
+/Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-want.c:3:1: error: unknown type name 'rsize_t'; did you mean 'size_t'?
+    3 | rsize_t value;
+      | ^~~~~~~
+      | size_t
+exit 1
+===== darwin-patched-full-then-need.c =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/gcc-17 -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/patched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/probes/full-then-need.c
+exit 0
+===== original rsize.cc installed compiler =====
+===== darwin-installed-rsize.cc-fmodules =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -std=c++26 -fmodules -fsyntax-only /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/rsize.cc
+exit 0
+===== darwin-installed-rsize.cc =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -std=c++26 -fsyntax-only /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/rsize.cc
+exit 0
+===== darwin-unpatched-rsize.cc-fmodules =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -std=c++26 -fmodules -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/unpatched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/rsize.cc
+exit 0
+===== darwin-patched-rsize.cc-fmodules =====
++ /Users/bjorn/.gcc/versions/17.0.0/bin/g++-17 -std=c++26 -fmodules -fsyntax-only -I /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/work/patched-include /Users/bjorn/Documents/cpp-starter/upstream/gcc-fixincludes-darwin-rsize-t/rsize.cc
+exit 0

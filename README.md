@@ -42,7 +42,7 @@ alone copies that value into the fixed reactor buffer.
 
 Bring the pinned tools on `PATH`; configure rejects every other tuple. Local
 paths belong in a gitignored `CMakeUserPresets.json`. Production GCC is 16.1
-or later (Linux CI uses 16.1; Darwin development may use trunk).
+or later (Linux production is 16.1; Darwin development may use trunk).
 
 ```sh
 cmake --preset dev
@@ -84,8 +84,8 @@ Linux additionally enables `_FORTIFY_SOURCE=3`, `-mbranch-protection=standard`,
 PIE, and RELRO/NOW. Those Darwin-inert flags stay off and are recorded in
 `PINS.md`. The `release` preset additionally links with GCC LTO. LTO applies
 to the `release` preset only: a `-flto -g` link has unbounded memory growth on
-the pinned Darwin toolchain (`upstream/gcc-lto-modules-debug-oom/`; registry
-entry `gcc-darwin-lto-debug-dsymutil` in `PINS.md`).
+the pinned Darwin toolchain (registry entry `gcc-darwin-lto-debug-dsymutil`
+in `PINS.md`).
 
 Deliberately absent, under the same no-empty-check policy:
 
@@ -96,11 +96,9 @@ Deliberately absent, under the same no-empty-check policy:
 - `-fhardened`: not supported on this target — it errors under `-Werror`
   with no classifiable warning and silently drops most constituents; the
   working constituents are forced explicitly above (registry entry
-  `gcc-darwin-fhardened` in `PINS.md`;
-  `upstream/gcc-darwin-fhardened-coverage/`).
+  `gcc-darwin-fhardened` in `PINS.md`).
 - `-fanalyzer`: it bails out on exactly the reactor code it would need to
-  analyze, so its silence is not a check (its two defects found while
-  probing are packaged under `upstream/`).
+  analyze, so its silence is not a check.
 
 ## Layout
 
@@ -110,7 +108,7 @@ tests/      module-native tests and the HTTP integration smoke test
 foreign/    pinned external-library adaptation; the stdexec boundary
 unsafe/     syscall adaptation; shared owner loop plus Darwin kqueue / Linux epoll
 examples/   the blocking bounded HTTP server
-upstream/   GCC/libstdc++ reproductions and submission material
+upstream/   GCC defect ledger and the rsize_t patch investigation
 ```
 
 One named module, `starter`, is the public surface. Its partitions are
