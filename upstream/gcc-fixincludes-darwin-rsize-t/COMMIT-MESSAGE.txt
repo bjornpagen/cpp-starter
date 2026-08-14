@@ -1,34 +1,35 @@
 stddef.h: Support explicit __need_rsize_t [PR126782]
 
-GCC <stddef.h> already answers selective typedef requests such as
+GCC's <stddef.h> supports selective type requests such as
 __need_size_t.  System headers, including the macOS SDK, use the same
-protocol with __need_rsize_t.  Clang <stddef.h> answers that request.
-GCC did not.  The include returned without a definition of rsize_t.
+protocol to request rsize_t with __need_rsize_t.  Clang handles this
+request, but GCC's <stddef.h> returned without defining rsize_t.
 
-Answer the explicit request only.  Define rsize_t as __SIZE_TYPE__.
-Guard it with _RSIZE_T to match Clang and the SDK non-modular branch.
-Consume __need_rsize_t.  A partial request still does not set
-_STDDEF_H.
+This patch handles only an explicit __need_rsize_t request.  It defines
+rsize_t as __SIZE_TYPE__, uses _RSIZE_T to match Clang and the SDK's
+non-modular path, and undefines __need_rsize_t after processing it.  As
+with other partial requests, it does not mark <stddef.h> as fully
+included.
 
-Do not declare rsize_t on a normal inclusion.  Do not declare it when
-__STDC_WANT_LIB_EXT1__ is set.  That would put an Annex K name on
-targets whose C libraries do not implement Annex K.  Comment 5 described
-Clang's full-inclusion path.  This patch does not follow that path.
-RSIZE_MAX and the bounds-checked functions stay with the C library.
+A normal inclusion still does not define rsize_t, including when
+__STDC_WANT_LIB_EXT1__ is set.  Defining it in that case would expose an
+Annex K name on targets whose C libraries do not implement Annex K.
+RSIZE_MAX and the bounds-checking functions remain the C library's
+responsibility.
 
-PR target/126782 first showed on Darwin with -fmodules.  GCC 16 reported
-__has_feature(modules), so the SDK took its __need_rsize_t branch.
-Trunk no longer reports that feature.  This patch adds the protocol.
-It does not restore that old trigger.
+PR target/126782 was first observed on Darwin with -fmodules.  GCC 16
+reported __has_feature(modules), which made the SDK request
+__need_rsize_t.  GCC trunk no longer reports that feature, so the
+original testcase now compiles without this patch.  The patch adds
+support for the underlying header protocol without restoring the old
+trigger.
 
-Bootstrapped all default languages and ran make -k check on
-aarch64-unknown-linux-gnu.  Stages 2 and 3 compared equal.  New tests
-gcc.dg/stddef-need-rsize-1.c through -4.c and
-g++.dg/stddef-need-rsize-1.C pass.  make -k check totals:
+Bootstrapped all default languages on aarch64-unknown-linux-gnu.
+Stages 2 and 3 compared equal.  A full make -k check completed with:
 PASS=997628 FAIL=57 XFAIL=5623 XPASS=0 UNSUPPORTED=11149 UNRESOLVED=7
-ERROR=0.  None of the FAILs involve stddef.h.  Two in-tree MPFR
-long-double tests hung with empty logs.  I stopped tget_ld_2exp and
-tset_ld with SIGTERM.  They are not GCC DejaGnu tests.
+ERROR=0.  All five new tests passed.  The 57 failures do not mention
+stddef.h or rsize_t.  Two in-tree MPFR long-double tests outside GCC's
+DejaGnu suite hung with empty logs and were terminated.
 
 I do not have GCC write access.
 OK for trunk?

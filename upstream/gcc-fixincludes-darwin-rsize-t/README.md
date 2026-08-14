@@ -38,8 +38,8 @@ Do not restore the old Darwin fixincludes files.
 
 Base revision: gcc-mirror `master` `c5d147d7370fb36834c9348c5d3bab229d89fb3e`.
 Local GCC commit (do not push): `63e3cdeb413866b501b102e5e37afcd6a1f510d7`.
-Patch SHA-256: `385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`.
-Size: 7930 bytes.
+Draft patch SHA-256: `720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b`.
+Size: 7942 bytes.
 
 ## What the patch does
 
@@ -58,9 +58,12 @@ Trunk no longer reports `__has_feature(modules)`.
 
 ## Send rules
 
-- Status: local preparation complete. Public send is blocked.
+- Status: draft. Public send is blocked.
+- Run and compare a pre-patch full testsuite before requesting approval.
+- After the comparison, update the public test statement and regenerate
+  the mail patch.
 - Send the patch to `gcc-patches@gcc.gnu.org` only after Bjorn approves
-  the exact values in `APPROVAL-PACKET.md`.
+  the final exact values in `APPROVAL-PACKET.md`.
 - A Bugzilla attachment does not replace that mail.
 - Do not comment on Bugzilla before the gcc-patches archive shows the mail.
 - Do not change Bugzilla fields.

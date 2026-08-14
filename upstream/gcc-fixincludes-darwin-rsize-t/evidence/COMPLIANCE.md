@@ -1,8 +1,8 @@
 # Compliance list for PR 126782 gcc-patches
 
 Policy pages: evidence/logs/policy-read.txt (read 2026-08-13).
-Public send is blocked until Bjorn approves APPROVAL-PACKET.md for
-SHA-256 `385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`.
+Public send is blocked. A pre-patch regression comparison is required
+before Bjorn can approve a final `APPROVAL-PACKET.md`.
 A Bugzilla attachment does not replace gcc-patches.
 
 ## Legal
@@ -13,13 +13,13 @@ A Bugzilla attachment does not replace gcc-patches.
 - [x] Co-authored-by is absent from the public patch
 - [ ] The user approves the exact public email before send
 
-## Maintainer direction (PR 126782 comments 3 and 4)
+## Maintainer direction (PR 126782 comment 4)
 
 - [x] Not a Darwin fixincludes rule
 - [x] GCC `<stddef.h>` answers explicit `__need_rsize_t`
 - [x] Not full Annex K
 - [x] Does not follow comment 5's optional Clang full-inclusion path
-- [x] EMAIL.txt states that last point in plain text
+- [x] EMAIL.txt states the patch's limited scope in plain text
 
 ## Patch form
 
@@ -33,7 +33,8 @@ A Bugzilla attachment does not replace gcc-patches.
 - [x] Applied tree equals the local commit tree
 - [x] `check_GNU_style.sh` hits match the existing `__need_*` and `_SIZE_T` style
 - [x] `mklog.py` ran. Keep the handwritten `stddef.h` ChangeLog line.
-- [x] `git format-patch` from local commit `63e3cdeb413866b501b102e5e37afcd6a1f510d7`
+- [x] Source diff from local commit `63e3cdeb413866b501b102e5e37afcd6a1f510d7`
+- [x] Mail patch derived from `git format-patch`; public prose revised
 - [x] `contrib/gcc-changelog` check on that commit: OK
 
 ## Testing (contribute.html)
@@ -41,6 +42,8 @@ A Bugzilla attachment does not replace gcc-patches.
 - [x] 3-stage bootstrap, default languages, at least one target
 - [x] `make -k check` on that build
 - [x] Test the exact patch that the mail will send
+- [ ] Compare against a pre-patch full testsuite on the same host and
+  configuration, or suitable recent `gcc-testresults` results
 - [x] Darwin protocol probes recorded
 - [x] Original `rsize.cc -fmodules` recorded as already passing on Darwin GCC 17
 - [x] Trunk only. No GCC 16 backport request in the public mail.

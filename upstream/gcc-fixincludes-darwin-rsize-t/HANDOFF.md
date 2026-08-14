@@ -1,11 +1,13 @@
 # Sending-agent handoff — PR 126782
 
-Status: local preparation complete. Public send is blocked.
-Do not call this work submitted.
-Do not send until Bjorn approves the exact values in
-`APPROVAL-PACKET.md` for this patch SHA-256:
+Status: draft. Public send is blocked.
+Do not call this work submitted or ready for approval.
+A pre-patch regression comparison is still required.
+Do not send until that comparison is complete and Bjorn approves the
+final values in `APPROVAL-PACKET.md`.
 
-`385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`
+Current draft SHA-256:
+`720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b`
 
 If any body, field, recipient, sign-off, attachment name, content,
 MIME type, or other public value changes, stop and request approval
@@ -23,6 +25,9 @@ Do not start Finch container `gcc-rsize-trunk`.
 
 ## Recheck before send
 
+0. Confirm that the packet contains a pre-patch regression comparison
+   for the same host and configuration, or a suitable documented
+   `gcc-testresults` comparison. Stop if it does not.
 1. Read live https://gcc.gnu.org/contribute.html, lists.html,
    develop.html, and dco.html. If a page conflicts with this packet,
    follow the page and tell Bjorn what changed.
@@ -30,10 +35,10 @@ Do not start Finch container `gcc-rsize-trunk`.
    count. If comments after comment 5 exist, stop and re-evaluate.
 3. Confirm `lists.html` still routes a generic `stddef.h` change to
    gcc-patches only.
-4. Confirm the patch file SHA-256 still matches the line above.
+4. Confirm the final patch SHA-256 matches the final approval packet.
 5. Confirm the file has no `Co-authored-by` line.
 6. Confirm `Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>`.
-7. Confirm `EMAIL.txt` body matches the format-patch commit message.
+7. Confirm `EMAIL.txt` body matches the mail patch commit message.
 
 ## Send command
 

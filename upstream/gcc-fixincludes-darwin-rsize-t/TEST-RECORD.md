@@ -7,13 +7,16 @@ Live develop.html as of 2026-08-13 (page last modified 2026-08-07):
 GCC 17 Stage 1 started 2026-04-23. Stage 3 starts 2026-11-16.
 Do not copy those dates into public mail. Recheck before send.
 
-Policy test: 3-stage bootstrap compared equal. `make -k check`
+Post-patch test: the 3-stage bootstrap compared equal. `make -k check`
 wrote `evidence/logs/check-summary.txt`.
 
-Public patch SHA-256:
-`385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`
-(7930 bytes, us-ascii). If this hash changes, stop and get a new
-approval.
+Blocking policy gap: no pre-patch full testsuite or suitable
+`gcc-testresults` comparison is recorded.
+
+Draft patch SHA-256:
+`720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b`
+(7942 bytes, us-ascii). The final baseline update will change this
+hash. Record the final value before requesting approval.
 
 ## Style (already done)
 
@@ -71,9 +74,13 @@ Two in-tree MPFR long-double tests hung with empty logs at 100% CPU:
 `tget_ld_2exp` (~4h54m) and `tset_ld` (~1h). They were SIGTERM'd (exit 143).
 See `evidence/logs/mpfr-killed.txt`. They are not GCC DejaGnu tests.
 
+## Blocking check
+
+- Pre-patch full testsuite on the same host and configuration, or a
+  documented comparison with suitable recent `gcc-testresults` results
+
 ## Checks that did not run
 
-- Pre-patch full testsuite on this host
 - Literal target name `make bootstrap` (used `make -j10` with bootstrap
   enabled; stages 2 and 3 compared equal)
 - `make -C gcc -k check-c++-all` (not a C++ front-end change)

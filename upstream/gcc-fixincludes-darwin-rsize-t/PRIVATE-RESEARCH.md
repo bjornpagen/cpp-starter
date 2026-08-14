@@ -27,6 +27,7 @@ COMPLIANCE.md, or evidence logs into Bugzilla or gcc-patches.
 
 GCC 16 reported `__has_feature(modules)`, so the SDK took its
 `__need_rsize_t` branch. Trunk no longer reports that feature. The
-original `rsize.cc` already compiles. The patch adds the protocol that
-comment 3 and comment 4 asked for. Do not post a Bugzilla comment that
-only says trunk already works. That invites WORKSFORME.
+original `rsize.cc` already compiles. Comment 4 suggested support for
+`__need_rsize_t` instead of a Darwin fixincludes rule. The patch follows
+that direction. Do not post a Bugzilla comment that only says trunk
+already works. That would add no useful evidence.

@@ -2,6 +2,6 @@ subject after classifier: stddef.h: Support explicit __need_rsize_t [PR126782]
 length: 52 (limit 75)
 ok
 uses [PRnnnnn] without component: True
-format-patch SHA-256: 385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de
-size: 7930 bytes
+format-patch SHA-256: 720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b
+size: 7942 bytes
 charset: us-ascii, no CRLF, no Co-authored-by
