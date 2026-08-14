@@ -13,8 +13,8 @@ Use these files as the control documents:
 - [`EVIDENCE-ARCHIVE.md`](EVIDENCE-ARCHIVE.md) locates off-repository
   evidence.
 - `ENVIRONMENT-gcc-v.txt` contains the recorded GCC 16.1.0 configuration.
-- [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/) is the
-  gcc-patches packet for PR 126782.
+- [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/) holds
+  the submitted patch and its technical test record for PR 126782.
 
 ## Public submission rule
 

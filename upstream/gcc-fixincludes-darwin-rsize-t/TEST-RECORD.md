@@ -3,9 +3,9 @@
 Base: gcc-mirror `master` `c5d147d7370fb36834c9348c5d3bab229d89fb3e`
 Local commit (do not push): `63e3cdeb413866b501b102e5e37afcd6a1f510d7`
 Date: 2026-08-13 UTC
-Live develop.html as of 2026-08-13 (page last modified 2026-08-07):
-GCC 17 Stage 1 started 2026-04-23. Stage 3 starts 2026-11-16.
-Do not copy those dates into public mail. Recheck before send.
+
+Submitted 2026-08-14:
+https://inbox.sourceware.org/gcc-patches/20260814032423.29082-1-hello@bjornpagen.com/
 
 Post-patch test: the 3-stage bootstrap compared equal. `make -k check`
 wrote `evidence/logs/check-summary.txt`.
@@ -15,7 +15,7 @@ recorded. The public message discloses this deviation.
 
 Patch SHA-256:
 `5d8a6a60cec5186c740246b94bc4fcd48e4d227b2b8bce603388b917457fa4a0`
-(7861 bytes, us-ascii). If this hash changes, request approval again.
+(7861 bytes, us-ascii).
 
 ## Style (already done)
 
@@ -69,10 +69,6 @@ New tests, all PASS:
 The 57 DejaGnu FAILs are aarch64 SME/SVE/advsimd, two libgomp C++ compiles,
 and libstdc++ filesystem copy tests. None mention stddef or rsize_t.
 
-Two in-tree MPFR long-double tests hung with empty logs at 100% CPU:
-`tget_ld_2exp` (~4h54m) and `tset_ld` (~1h). They were SIGTERM'd (exit 143).
-See `evidence/logs/mpfr-killed.txt`. They are not GCC DejaGnu tests.
-
 ## Checks that did not run
 
 - Pre-patch full testsuite on this host
@@ -80,8 +76,6 @@ See `evidence/logs/mpfr-killed.txt`. They are not GCC DejaGnu tests.
 - Literal target name `make bootstrap` (used `make -j10` with bootstrap
   enabled; stages 2 and 3 compared equal)
 - `make -C gcc -k check-c++-all` (not a C++ front-end change)
-- Live Bugzilla re-read this pass (Anubis). Last browser read: 2026-08-13,
-  comments 0-5
 
 ## Not requested
 

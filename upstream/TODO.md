@@ -5,30 +5,20 @@ report status is in [`BUGS.md`](BUGS.md).
 
 ## Now
 
-1. PR 126782: local patch packet is in
-   [`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/).
-   - Public send is blocked.
-   - Bjorn must approve the exact values in
-     `gcc-fixincludes-darwin-rsize-t/APPROVAL-PACKET.md`.
-   - Then a sending agent follows `HANDOFF.md`.
-   - Do not mail gcc-patches, comment on Bugzilla, change Bugzilla
-     fields, or push a GCC remote until that approval names this
-     SHA-256:
-     `385acc6a7a51883837234427e18dd877712cced040bff6972077a9f084d786de`.
+1. PR 126782: wait for review of the
+   [submitted patch](https://inbox.sourceware.org/gcc-patches/20260814032423.29082-1-hello@bjornpagen.com/).
+   Reply in the same thread if a maintainer requests changes.
 
 ## Next
 
-1. After the gcc-patches archive shows the mail, draft a one-line
-   Bugzilla note with that URL and get a separate approval.
-2. Prepare the Apple `_rsize_t.h` report after the PR 126782 fix
+1. Prepare the Apple `_rsize_t.h` report after the PR 126782 fix
    direction is stable.
 
 ## Later
 
 1. Re-test every pin in `PINS.md` after a GCC toolchain update.
-2. Send one polite ping after an appropriate period of silence. Recheck GCC
-   policy and trunk before each ping. Reply to the original thread. Do not
-   start a new ping thread.
+2. If PR 126782 receives no review after about two weeks, send one short
+   ping in the original thread. Recheck GCC policy and trunk first.
 
 ## Removed work
 
