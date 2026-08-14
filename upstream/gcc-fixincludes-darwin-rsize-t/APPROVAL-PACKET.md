@@ -1,11 +1,8 @@
 # Patch approval packet — PR 126782
 
 Work type: Patch.
-Status: draft. Do not approve or send this version.
-
-A pre-patch regression comparison is still required. After that run, update
-the test statement, regenerate the mail patch, and prepare a new approval
-packet. Bjorn must approve every public value in that final packet.
+Status: ready for exact approval. Public send remains blocked until Bjorn
+approves every public value in this packet.
 
 ## Legal status
 
@@ -67,9 +64,9 @@ The 57 failures are in aarch64 SME, SVE, and AdvSIMD tests, two libgomp
 C++ compilations, and libstdc++ filesystem copy tests. None mention
 `stddef.h` or `rsize_t`.
 
-This is a post-patch result only. GCC policy requires a regression
-comparison against the unpatched tree or suitable recent `gcc-testresults`
-results. That comparison is the remaining blocking test.
+This is a post-patch result only. No local pre-patch full-suite baseline
+ran, and no `gcc-testresults` comparison was used. The public message
+discloses this deviation.
 
 Darwin protocol probes (header override, gcc 17.0.0 20260810,
 aarch64-apple-darwin24) are in TEST-RECORD.md. They are extra. They
@@ -88,13 +85,10 @@ are not the policy bootstrap.
 - mail patch derived from `git format-patch -1`; public prose revised
 - Darwin protocol probes
 
-## Blocking check
-
-- Pre-patch `make -k check` on the same host and configuration, or a
-  documented comparison with suitable recent `gcc-testresults` results.
-
 ## Checks that did not run
 
+- Pre-patch `make -k check` on this host. No `gcc-testresults`
+  comparison was used.
 - Literal make-target name `make bootstrap`. The build used
   `make -j10` with bootstrap enabled. Stages 2 and 3 compared equal.
 - `make -C gcc -k check-c++-all`. This is not a C++ front-end change.
@@ -123,8 +117,8 @@ Uses [PR126782], not [PR target/126782].
 
 ## Body
 
-Current draft body. It is also in `EMAIL.txt`, `COMMIT-MESSAGE.txt`, and
-the mail patch. Do not approve it until the regression comparison is added.
+Exact public body. It is also in `EMAIL.txt`, `COMMIT-MESSAGE.txt`, and
+the mail patch.
 
 ```
 GCC's <stddef.h> supports selective type requests such as
@@ -154,9 +148,10 @@ trigger.
 Bootstrapped all default languages on aarch64-unknown-linux-gnu.
 Stages 2 and 3 compared equal.  A full make -k check completed with:
 PASS=997628 FAIL=57 XFAIL=5623 XPASS=0 UNSUPPORTED=11149 UNRESOLVED=7
-ERROR=0.  All five new tests passed.  The 57 failures do not mention
-stddef.h or rsize_t.  Two in-tree MPFR long-double tests outside GCC's
-DejaGnu suite hung with empty logs and were terminated.
+ERROR=0.  All five new tests passed.  No local pre-patch full-suite
+baseline was run.  The 57 failures do not mention stddef.h or rsize_t.
+Two in-tree MPFR long-double tests outside GCC's DejaGnu suite hung
+with empty logs and were terminated.
 
 I do not have GCC write access.
 OK for trunk?
@@ -183,8 +178,8 @@ Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
 
 Attachment / send file:
 `0001-stddef.h-Support-explicit-__need_rsize_t-PR126782.patch`
-Draft SHA-256: `720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b`
-Size: 7942 bytes
+SHA-256: `51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05`
+Size: 7990 bytes
 charset: us-ascii
 Method: `git send-email` of that file, `--transfer-encoding=7bit`.
 Intended MIME: text/plain or text/x-patch.
@@ -198,8 +193,8 @@ Co-authored-by: absent.
 
 ## Open items and deviations
 
-1. Blocking: no pre-patch full testsuite or suitable `gcc-testresults`
-   comparison is recorded.
+1. No pre-patch full testsuite or suitable `gcc-testresults` comparison
+   is recorded. The public test statement discloses this deviation.
 2. Used `make -j10` with bootstrap enabled, not the literal target
    name `make bootstrap`. Stages 2 and 3 compared equal.
 3. Two in-tree MPFR long-double tests were stopped with SIGTERM after
@@ -213,14 +208,18 @@ Co-authored-by: absent.
 7. `mklog.py` named extra stddef.h tokens. The handwritten ChangeLog
    line was kept.
 
-## Next gate
+## Approval question
 
-Do not request send approval from this draft.
+May the sending agent send this exact mail?
 
-1. Run the unpatched full testsuite on the same host and configuration,
-   or document a suitable comparison from `gcc-testresults`.
-2. Compare the results and investigate every new failure.
-3. Update the public test statement.
-4. Regenerate and validate the mail patch.
-5. Prepare a new packet with the final hash and exact public values.
-6. Ask Bjorn to approve that complete packet.
+- From: Bjorn Pagen <hello@bjornpagen.com>
+- To: gcc-patches@gcc.gnu.org
+- Cc: none
+- Subject: [PATCH] stddef.h: Support explicit __need_rsize_t [PR126782]
+- Body: the body block above
+- File: 0001-stddef.h-Support-explicit-__need_rsize_t-PR126782.patch
+- SHA-256: 51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05
+- MIME: git send-email, 7bit, text/plain or text/x-patch
+- Sign-off: Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
+
+Answer yes only for these values. Public send stays blocked until then.

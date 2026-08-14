@@ -1,8 +1,8 @@
 format-patch identity, 2026-08-13
 
 file: 0001-stddef.h-Support-explicit-__need_rsize_t-PR126782.patch
-SHA-256: 720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b
-size: 7942 bytes
+SHA-256: 51b34741bdbffdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05
+size: 7990 bytes
 note: source diff unchanged; public prose revised for clarity
 charset: us-ascii
 CRLF: no

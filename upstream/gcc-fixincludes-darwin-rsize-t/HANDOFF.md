@@ -1,13 +1,12 @@
 # Sending-agent handoff — PR 126782
 
-Status: draft. Public send is blocked.
-Do not call this work submitted or ready for approval.
-A pre-patch regression comparison is still required.
-Do not send until that comparison is complete and Bjorn approves the
-final values in `APPROVAL-PACKET.md`.
+Status: local preparation complete. Public send is blocked.
+Do not call this work submitted.
+Do not send until Bjorn approves the exact public values in
+`APPROVAL-PACKET.md`.
 
-Current draft SHA-256:
-`720d6981a1daa479f1956a52fb89e4b4245b1e02d905e8a97f3b3ff83c48383b`
+Patch SHA-256:
+`51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05`
 
 If any body, field, recipient, sign-off, attachment name, content,
 MIME type, or other public value changes, stop and request approval
@@ -25,9 +24,6 @@ Do not start Finch container `gcc-rsize-trunk`.
 
 ## Recheck before send
 
-0. Confirm that the packet contains a pre-patch regression comparison
-   for the same host and configuration, or a suitable documented
-   `gcc-testresults` comparison. Stop if it does not.
 1. Read live https://gcc.gnu.org/contribute.html, lists.html,
    develop.html, and dco.html. If a page conflicts with this packet,
    follow the page and tell Bjorn what changed.

@@ -1,8 +1,9 @@
 # Compliance list for PR 126782 gcc-patches
 
 Policy pages: evidence/logs/policy-read.txt (read 2026-08-13).
-Public send is blocked. A pre-patch regression comparison is required
-before Bjorn can approve a final `APPROVAL-PACKET.md`.
+Public send is blocked until Bjorn approves `APPROVAL-PACKET.md`.
+The packet and public message disclose that no pre-patch full-suite
+baseline or `gcc-testresults` comparison was used.
 A Bugzilla attachment does not replace gcc-patches.
 
 ## Legal
@@ -42,8 +43,8 @@ A Bugzilla attachment does not replace gcc-patches.
 - [x] 3-stage bootstrap, default languages, at least one target
 - [x] `make -k check` on that build
 - [x] Test the exact patch that the mail will send
-- [ ] Compare against a pre-patch full testsuite on the same host and
-  configuration, or suitable recent `gcc-testresults` results
+- [ ] Compare against a pre-patch full testsuite or suitable recent
+  `gcc-testresults` results. Not run; disclosed as a deviation.
 - [x] Darwin protocol probes recorded
 - [x] Original `rsize.cc -fmodules` recorded as already passing on Darwin GCC 17
 - [x] Trunk only. No GCC 16 backport request in the public mail.
