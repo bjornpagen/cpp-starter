@@ -108,7 +108,7 @@ tests/      module-native tests and the HTTP integration smoke test
 foreign/    pinned external-library adaptation; the stdexec boundary
 unsafe/     syscall adaptation; shared owner loop plus Darwin kqueue / Linux epoll
 examples/   the blocking bounded HTTP server
-upstream/   GCC defect ledger and the rsize_t patch investigation
+upstream/   GCC defect ledger and submission process
 ```
 
 One named module, `starter`, is the public surface. Its partitions are
@@ -139,7 +139,7 @@ when they arrive, the one vendor boundary is rewritten over `std::execution`.
 
 ## Known macOS toolchain issues
 
-The pinned GCC `import std` path needs two upstream fixes represented under
-`upstream/`: Darwin's `_rsize_t` fixincludes interaction and libstdc++'s
-silent empty `std` module fallback. `PINS.md` is the registry for active local
-workarounds; upstream submission material records the external fixes.
+The pinned GCC `import std` path has two known upstream defects: the former
+Clang-modules feature claim on Darwin and libstdc++'s silent empty `std` module
+fallback. `PINS.md` records active local workarounds. `upstream/BUGS.md` links
+the public reports and their current dispositions.

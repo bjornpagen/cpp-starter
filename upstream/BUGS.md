@@ -7,9 +7,8 @@ patch submission, fix, or verification run.
 `Bugzilla status` is the literal upstream field. `Local state` records the next
 action in this repository. Do not infer one from the other.
 
-The only in-tree investigation directory is
-[`gcc-fixincludes-darwin-rsize-t`](gcc-fixincludes-darwin-rsize-t/). Every other
-row is a Bugzilla pointer. Do not recreate deleted reproduction trees.
+Rows are public upstream pointers. Do not recreate deleted investigation or
+reproduction trees.
 
 Last full read-only review: 2026-08-14 UTC.
 
@@ -17,7 +16,7 @@ Last full read-only review: 2026-08-14 UTC.
 
 | PR | Summary | Component | Bugzilla status | Local state | Next action |
 |---|---|---|---|---|---|
-| [126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) | `[Darwin] sys/_types/_rsize_t.h does not define rsize_t with -fmodules` | target | UNCONFIRMED | `patch-under-review` | [Patch submitted](https://inbox.sourceware.org/gcc-patches/20260814032423.29082-1-hello@bjornpagen.com/) on 2026-08-14. Bugzilla comment 6 links the review thread. Wait for review and reply in that thread. |
+| [126782](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126782) | `[Darwin] sys/_types/_rsize_t.h does not define rsize_t with -fmodules` | target | UNCONFIRMED | `retired-no-local-work` | [Patch submitted](https://inbox.sourceware.org/gcc-patches/20260814032423.29082-1-hello@bjornpagen.com/) on 2026-08-14. GCC trunk commit [`08ede4f`](https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=08ede4fbbe6d38e08bcc72c4df2cf6720b9f4717) had already removed the incorrect Clang-modules feature claim and the active trigger. Do no more work unless a maintainer responds. |
 | [126783](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126783) | `[16/17 Regression] [modules] ICE when a GMF variable is later defined inline` | c++ | ASSIGNED | `pointer-only` | None. Patrick Palka has the assignment. Pin: `gcc-gmf-stdexec-ice`. |
 | [126786](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126786) | `[libstdc++] Module fallback installs empty interface files but the manifest lists them` | libstdc++ | UNCONFIRMED | `pointer-only` | None. |
 | [126805](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=126805) | `[analyzer] ICE in convert_region_from_summary for a class return slot` | analyzer | UNCONFIRMED | `pointer-only` | None. |
@@ -47,5 +46,5 @@ Last full read-only review: 2026-08-14 UTC.
 2. Update the literal Bugzilla status.
 3. Update the local state only when the next action changes.
 4. Record the current UTC date in the review line.
-5. Keep technical evidence in `gcc-fixincludes-darwin-rsize-t/` only.
+5. Do not recreate retired technical-evidence directories.
 6. Do not post, comment, upload, or change fields as part of a ledger refresh.

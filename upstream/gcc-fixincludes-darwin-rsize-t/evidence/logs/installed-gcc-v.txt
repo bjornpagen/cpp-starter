@@ -1,8 +1,0 @@
-Using built-in specs.
-COLLECT_GCC=/work/install/bin/gcc
-COLLECT_LTO_WRAPPER=/work/install/libexec/gcc/aarch64-unknown-linux-gnu/17.0.0/lto-wrapper
-Target: aarch64-unknown-linux-gnu
-Configured with: /src/configure --prefix=/work/install --disable-nls --disable-multilib --with-system-zlib --enable-checking=yes
-Thread model: posix
-Supported LTO compression algorithms: zlib zstd
-gcc version 17.0.0 20260813 (experimental) (GCC) 

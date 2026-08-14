@@ -1,8 +1,0 @@
-Using built-in specs.
-COLLECT_GCC=/Users/bjorn/.gcc/versions/17.0.0/bin/g++-17
-COLLECT_LTO_WRAPPER=/Users/bjorn/.gcc/versions/17.0.0/libexec/gcc/aarch64-apple-darwin24/17/lto-wrapper
-Target: aarch64-apple-darwin24
-Configured with: /Users/bjorn/.gcc/src/gcc-darwin-arm64/configure --prefix=/Users/bjorn/.gcc/versions/17.0.0 --enable-languages=c,c++ --disable-nls --enable-checking=release --program-suffix=-17 --with-system-zlib --disable-bootstrap --with-gcc-major-version-only --build=aarch64-apple-darwin24 --with-sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk CC=/usr/bin/clang CXX=/usr/bin/clang++
-Thread model: posix
-Supported LTO compression algorithms: zlib
-gcc version 17.0.0 20260810 (experimental) (GCC) 

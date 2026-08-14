@@ -1,8 +1,7 @@
 # Evidence archive
 
-In-tree technical evidence lives only in
-[`gcc-fixincludes-darwin-rsize-t/`](gcc-fixincludes-darwin-rsize-t/). Other
-filed defects are Bugzilla pointers in [`BUGS.md`](BUGS.md).
+No retired GCC investigation evidence is stored in this repository. Public
+Bugzilla and mailing-list records are linked from [`BUGS.md`](BUGS.md).
 
 ## Bugzilla access
 

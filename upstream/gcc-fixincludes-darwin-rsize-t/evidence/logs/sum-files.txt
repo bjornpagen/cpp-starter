@@ -1,8 +1,0 @@
-/work/build/aarch64-unknown-linux-gnu/libatomic/testsuite/libatomic.sum
-/work/build/aarch64-unknown-linux-gnu/libgomp/testsuite/libgomp.sum
-/work/build/aarch64-unknown-linux-gnu/libitm/testsuite/libitm.sum
-/work/build/aarch64-unknown-linux-gnu/libstdc++-v3/testsuite/libstdc++.sum
-/work/build/gcc/testsuite/g++/g++.sum
-/work/build/gcc/testsuite/gcc/gcc.sum
-/work/build/gcc/testsuite/gfortran/gfortran.sum
-/work/build/gcc/testsuite/objc/objc.sum

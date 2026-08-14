@@ -162,13 +162,14 @@ top-level CMake dependency declaration.
   `include-fixed/sys/_types/` and rebuild libstdc++; verify
   `include/c++/<ver>/bits/std.cc` is ~113 KB, not 1 byte. That local
   header is toolchain state, not an in-tree file
-- retire: when `__need_rsize_t` support lands in the pinned GCC (and the
-  silent-empty-fallback report is resolved, so a failed std-module build
-  can no longer masquerade as success)
+- retire: upgrade to a GCC build that contains `08ede4f`, which stops claiming
+  support for Clang modules. Also resolve the silent-empty-fallback report so
+  a failed std-module build cannot masquerade as success
 - upstream: filed 2026-08-10 as PR target/126782 (See Also PR 116827); the
   silent empty-module fallback is filed separately as PR 126786.
-  Maintainer feedback rejects Darwin fixincludes. The replacement patch
-  is `upstream/gcc-fixincludes-darwin-rsize-t/`
+  Maintainer feedback rejects Darwin fixincludes. A direct
+  `__need_rsize_t` patch was submitted, but the local work is retired because
+  trunk commit `08ede4f` had already removed the active trigger
 
 ## gcc-darwin-lto-debug-dsymutil
 
