@@ -150,11 +150,8 @@ Stages 2 and 3 compared equal.  A full make -k check completed with:
 PASS=997628 FAIL=57 XFAIL=5623 XPASS=0 UNSUPPORTED=11149 UNRESOLVED=7
 ERROR=0.  All five new tests passed.  No local pre-patch full-suite
 baseline was run.  The 57 failures do not mention stddef.h or rsize_t.
-Two in-tree MPFR long-double tests outside GCC's DejaGnu suite hung
-with empty logs and were terminated.
 
-I do not have GCC write access.
-OK for trunk?
+Is this OK for trunk?
 
 gcc/ChangeLog:
 
@@ -178,14 +175,14 @@ Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
 
 Attachment / send file:
 `0001-stddef.h-Support-explicit-__need_rsize_t-PR126782.patch`
-SHA-256: `51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05`
-Size: 7990 bytes
+SHA-256: `5d8a6a60cec5186c740246b94bc4fcd48e4d227b2b8bce603388b917457fa4a0`
+Size: 7861 bytes
 charset: us-ascii
 Method: `git send-email` of that file, `--transfer-encoding=7bit`.
 Intended MIME: text/plain or text/x-patch.
 Forbidden: application/*, base64, quoted-printable, HTML.
 
-Write access statement: present.
+Write access statement: omitted. The contributor considers it implicit.
 ChangeLog: present in the commit message. No ChangeLog file edit.
 PR number: present.
 Sign-off: present.
@@ -218,7 +215,7 @@ May the sending agent send this exact mail?
 - Subject: [PATCH] stddef.h: Support explicit __need_rsize_t [PR126782]
 - Body: the body block above
 - File: 0001-stddef.h-Support-explicit-__need_rsize_t-PR126782.patch
-- SHA-256: 51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05
+- SHA-256: 5d8a6a60cec5186c740246b94bc4fcd48e4d227b2b8bce603388b917457fa4a0
 - MIME: git send-email, 7bit, text/plain or text/x-patch
 - Sign-off: Signed-off-by: Bjorn Pagen <hello@bjornpagen.com>
 

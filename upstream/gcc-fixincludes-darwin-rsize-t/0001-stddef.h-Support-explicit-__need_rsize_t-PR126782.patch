@@ -32,11 +32,8 @@ Stages 2 and 3 compared equal.  A full make -k check completed with:
 PASS=997628 FAIL=57 XFAIL=5623 XPASS=0 UNSUPPORTED=11149 UNRESOLVED=7
 ERROR=0.  All five new tests passed.  No local pre-patch full-suite
 baseline was run.  The 57 failures do not mention stddef.h or rsize_t.
-Two in-tree MPFR long-double tests outside GCC's DejaGnu suite hung
-with empty logs and were terminated.
 
-I do not have GCC write access.
-OK for trunk?
+Is this OK for trunk?
 
 gcc/ChangeLog:
 

@@ -14,8 +14,8 @@ No pre-patch full testsuite or suitable `gcc-testresults` comparison is
 recorded. The public message discloses this deviation.
 
 Patch SHA-256:
-`51b34741bdbffdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05`
-(7990 bytes, us-ascii). If this hash changes, request approval again.
+`5d8a6a60cec5186c740246b94bc4fcd48e4d227b2b8bce603388b917457fa4a0`
+(7861 bytes, us-ascii). If this hash changes, request approval again.
 
 ## Style (already done)
 

@@ -38,8 +38,8 @@ Do not restore the old Darwin fixincludes files.
 
 Base revision: gcc-mirror `master` `c5d147d7370fb36834c9348c5d3bab229d89fb3e`.
 Local GCC commit (do not push): `63e3cdeb413866b501b102e5e37afcd6a1f510d7`.
-Patch SHA-256: `51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05`.
-Size: 7990 bytes.
+Patch SHA-256: `5d8a6a60cec5186c740246b94bc4fcd48e4d227b2b8bce603388b917457fa4a0`.
+Size: 7861 bytes.
 
 ## What the patch does
 

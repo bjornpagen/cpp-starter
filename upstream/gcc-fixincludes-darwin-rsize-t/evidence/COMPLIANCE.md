@@ -54,7 +54,7 @@ A Bugzilla attachment does not replace gcc-patches.
 - [x] To: `gcc-patches@gcc.gnu.org` only
 - [x] Not libstdc++, Fortran, Rust, jit, Algol 68, or bpf lists
 - [x] Plain text, not HTML
-- [x] Write-access sentence is in EMAIL.txt
+- [x] Write-access sentence omitted by contributor; it is not required
 - [x] This packet does not comment on Bugzilla, change fields, or push to GCC
 
 ## After send (submission agent, after approval)

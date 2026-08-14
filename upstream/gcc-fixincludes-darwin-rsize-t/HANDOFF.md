@@ -6,7 +6,7 @@ Do not send until Bjorn approves the exact public values in
 `APPROVAL-PACKET.md`.
 
 Patch SHA-256:
-`51b34741bdbffdbdb7c9e81cae509d01461ed9f6982f7e3d0acf9a580f067d05`
+`5d8a6a60cec5186c740246b94bc4fcd48e4d227b2b8bce603388b917457fa4a0`
 
 If any body, field, recipient, sign-off, attachment name, content,
 MIME type, or other public value changes, stop and request approval
